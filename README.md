@@ -5,8 +5,8 @@ Chrome EC Bus Driver
 
 Known ACPI IDs:
 * ACPI\GOOG0004: Chrome EC Bus (This driver)
-* ACPI\GOOG0012: Chrome EC I2C Passthrough
-* ACPI\GOOG0013: Chrome EC Audio Codec (Usually DMIC over I2S)
+* ACPI\GOOG0012: Chrome EC I2C Passthrough - https://github.com/coolstar/croseci2c
+* ACPI\GOOG0013: Chrome EC Audio Codec (Usually DMIC over I2S) - https://github.com/coolstar/croseccodec
 
 Protocols Implemented:
 * LPC v2
