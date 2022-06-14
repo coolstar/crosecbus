@@ -4,6 +4,7 @@ Chrome EC Bus Driver
 * To use this driver, either ACPI must expose child devices, or you must modify this driver to enumerate child devices for other drivers to attach to
 
 Known ACPI IDs:
+
 	ACPI\GOOG0004: Chrome EC Bus (This driver)
 	ACPI\GOOG0012: Chrome EC I2C Passthrough
 	ACPI\GOOG0013: Chrome EC Audio Codec (Usually DMIC over I2S)
