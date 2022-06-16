@@ -108,7 +108,7 @@ EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL CrosEcBusEvtInternalDeviceControl;
 #define DBG_PNP   2
 #define DBG_IOCTL 4
 
-#if 1
+#if 0
 #define CrosEcBusPrint(dbglevel, dbgcatagory, fmt, ...) {          \
     if (CrosEcBusDebugLevel >= dbglevel &&                         \
         (CrosEcBusDebugCatagories && dbgcatagory))                 \
