@@ -55,6 +55,15 @@ BOOLEAN
     IN INT Feature
     );
 
+typedef
+INT
+(*PCROSEC_READ_MEM) (
+    IN PVOID Context,
+    IN INT offset,
+    IN INT bytes,
+    OUT PVOID dest
+    );
+
 DEFINE_GUID(GUID_CROSEC_INTERFACE_STANDARD,
     0xd7062676, 0xe3a4, 0x11ec, 0xa6, 0xc4, 0x24, 0x4b, 0xfe, 0x99, 0x46, 0xd0);
 
@@ -66,6 +75,13 @@ typedef struct _CROSEC_INTERFACE_STANDARD {
     PCROSEC_CMD_XFER_STATUS          CmdXferStatus;
     PCROSEC_CHECK_FEATURES           CheckFeatures;
 } CROSEC_INTERFACE_STANDARD, * PCROSEC_INTERFACE_STANDARD;
+
+typedef struct _CROSEC_INTERFACE_STANDARD_V2 {
+    INTERFACE                        InterfaceHeader;
+    PCROSEC_CMD_XFER_STATUS          CmdXferStatus;
+    PCROSEC_CHECK_FEATURES           CheckFeatures;
+    PCROSEC_READ_MEM                 ReadEcMem;
+} CROSEC_INTERFACE_STANDARD_V2, * PCROSEC_INTERFACE_STANDARD_V2;
 
 typedef struct _CROSECBUS_CONTEXT
 {

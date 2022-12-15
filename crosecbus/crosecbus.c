@@ -97,6 +97,16 @@ static BOOLEAN CrosEcCheckFeatures(
 	return !!(pDevice->EcFeatures[Feature / 32] & EC_FEATURE_MASK_0(Feature));
 }
 
+static INT CrosEcReadMem(
+	IN PCROSECBUS_CONTEXT pDevice,
+	IN INT offset,
+	IN INT bytes,
+	OUT PVOID dest
+)
+{
+	return ec_readmem(offset, bytes, dest);
+}
+
 NTSTATUS
 OnPrepareHardware(
 _In_  WDFDEVICE     FxDevice,
@@ -355,33 +365,67 @@ IN PWDFDEVICE_INIT DeviceInit
 		return status;
 	}
 
-	CROSEC_INTERFACE_STANDARD CrosEcInterface;
-	RtlZeroMemory(&CrosEcInterface, sizeof(CrosEcInterface));
+	{ // V1
+		CROSEC_INTERFACE_STANDARD CrosEcInterface;
+		RtlZeroMemory(&CrosEcInterface, sizeof(CrosEcInterface));
 
-	CrosEcInterface.InterfaceHeader.Size = sizeof(CrosEcInterface);
-	CrosEcInterface.InterfaceHeader.Version = 1;
-	CrosEcInterface.InterfaceHeader.Context = (PVOID)devContext;
+		CrosEcInterface.InterfaceHeader.Size = sizeof(CrosEcInterface);
+		CrosEcInterface.InterfaceHeader.Version = 1;
+		CrosEcInterface.InterfaceHeader.Context = (PVOID)devContext;
 
-	//
-	// Let the framework handle reference counting.
-	//
-	CrosEcInterface.InterfaceHeader.InterfaceReference = WdfDeviceInterfaceReferenceNoOp;
-	CrosEcInterface.InterfaceHeader.InterfaceDereference = WdfDeviceInterfaceDereferenceNoOp;
+		//
+		// Let the framework handle reference counting.
+		//
+		CrosEcInterface.InterfaceHeader.InterfaceReference = WdfDeviceInterfaceReferenceNoOp;
+		CrosEcInterface.InterfaceHeader.InterfaceDereference = WdfDeviceInterfaceDereferenceNoOp;
 
-	CrosEcInterface.CheckFeatures = CrosEcCheckFeatures;
-	CrosEcInterface.CmdXferStatus = CrosEcCmdXferStatus;
+		CrosEcInterface.CheckFeatures = CrosEcCheckFeatures;
+		CrosEcInterface.CmdXferStatus = CrosEcCmdXferStatus;
 
-	WDF_QUERY_INTERFACE_CONFIG_INIT(&qiConfig,
-		(PINTERFACE)&CrosEcInterface,
-		&GUID_CROSEC_INTERFACE_STANDARD,
-		NULL);
+		WDF_QUERY_INTERFACE_CONFIG_INIT(&qiConfig,
+			(PINTERFACE)&CrosEcInterface,
+			&GUID_CROSEC_INTERFACE_STANDARD,
+			NULL);
 
-	status = WdfDeviceAddQueryInterface(device, &qiConfig);
-	if (!NT_SUCCESS(status)) {
-		CrosEcBusPrint(DEBUG_LEVEL_ERROR, DBG_PNP,
-			"WdfDeviceAddQueryInterface failed 0x%x\n", status);
+		status = WdfDeviceAddQueryInterface(device, &qiConfig);
+		if (!NT_SUCCESS(status)) {
+			CrosEcBusPrint(DEBUG_LEVEL_ERROR, DBG_PNP,
+				"WdfDeviceAddQueryInterface failed 0x%x\n", status);
 
-		return status;
+			return status;
+		}
+	}
+
+	{ // V2
+		CROSEC_INTERFACE_STANDARD_V2 CrosEcInterface;
+		RtlZeroMemory(&CrosEcInterface, sizeof(CrosEcInterface));
+
+		CrosEcInterface.InterfaceHeader.Size = sizeof(CrosEcInterface);
+		CrosEcInterface.InterfaceHeader.Version = 2;
+		CrosEcInterface.InterfaceHeader.Context = (PVOID)devContext;
+
+		//
+		// Let the framework handle reference counting.
+		//
+		CrosEcInterface.InterfaceHeader.InterfaceReference = WdfDeviceInterfaceReferenceNoOp;
+		CrosEcInterface.InterfaceHeader.InterfaceDereference = WdfDeviceInterfaceDereferenceNoOp;
+
+		CrosEcInterface.CheckFeatures = CrosEcCheckFeatures;
+		CrosEcInterface.CmdXferStatus = CrosEcCmdXferStatus;
+		CrosEcInterface.ReadEcMem = CrosEcReadMem;
+
+		WDF_QUERY_INTERFACE_CONFIG_INIT(&qiConfig,
+			(PINTERFACE)&CrosEcInterface,
+			&GUID_CROSEC_INTERFACE_STANDARD,
+			NULL);
+
+		status = WdfDeviceAddQueryInterface(device, &qiConfig);
+		if (!NT_SUCCESS(status)) {
+			CrosEcBusPrint(DEBUG_LEVEL_ERROR, DBG_PNP,
+				"WdfDeviceAddQueryInterface failed 0x%x\n", status);
+
+			return status;
+		}
 	}
 
 	devContext->FxDevice = device;
