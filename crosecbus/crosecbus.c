@@ -330,12 +330,12 @@ IN PWDFDEVICE_INIT DeviceInit
 		return status;
 	}
 
-	if (!NT_SUCCESS(status))
 	{
-		CrosEcBusPrint(DEBUG_LEVEL_ERROR, DBG_PNP,
-			"WdfIoQueueCreate failed 0x%x\n", status);
+		WDF_DEVICE_STATE deviceState;
+		WDF_DEVICE_STATE_INIT(&deviceState);
 
-		return status;
+		deviceState.NotDisableable = WdfFalse;
+		WdfDeviceSetDeviceState(device, &deviceState);
 	}
 
 	//
