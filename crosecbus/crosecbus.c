@@ -416,7 +416,7 @@ IN PWDFDEVICE_INIT DeviceInit
 
 		WDF_QUERY_INTERFACE_CONFIG_INIT(&qiConfig,
 			(PINTERFACE)&CrosEcInterface,
-			&GUID_CROSEC_INTERFACE_STANDARD,
+			&GUID_CROSEC_INTERFACE_STANDARD_V2,
 			NULL);
 
 		status = WdfDeviceAddQueryInterface(device, &qiConfig);
