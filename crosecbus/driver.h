@@ -26,7 +26,7 @@
 #define CROSECBUS_HARDWARE_IDS        L"CoolStar\\GOOG0004\0\0"
 #define CROSECBUS_HARDWARE_IDS_LENGTH sizeof(CROSECBUS_HARDWARE_IDS)
 
-#define NTDEVICE_NAME_STRING       L"\\Device\\GOOG0004"
+#define NTDEVICE_NAME_STRING       L"\\Device\\CrosEC"
 #define SYMBOLIC_NAME_STRING       L"\\DosDevices\\GOOG0004"
 
 #define true 1

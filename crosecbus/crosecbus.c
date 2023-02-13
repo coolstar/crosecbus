@@ -2,6 +2,7 @@
 #include "driver.h"
 #include "stdint.h"
 #include "comm-host.h"
+#include "userspaceQueue.h"
 
 #define bool int
 #define MS_IN_US 1000
@@ -315,6 +316,18 @@ IN PWDFDEVICE_INIT DeviceInit
 		WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpCallbacks);
 	}
 
+	{
+		DECLARE_CONST_UNICODE_STRING(Name, NTDEVICE_NAME_STRING);
+		status = WdfDeviceInitAssignName(DeviceInit,
+			&Name
+		);
+		if (!NT_SUCCESS(status)) {
+			CrosEcBusPrint(DEBUG_LEVEL_ERROR, DBG_PNP,
+				"WdfDeviceInitAssignName failed 0x%x\n", status);
+			return status;
+		}
+	}
+
 	//
 	// Setup the device context
 	//
@@ -348,9 +361,12 @@ IN PWDFDEVICE_INIT DeviceInit
 		WdfDeviceSetDeviceState(device, &deviceState);
 	}
 
-	//
-	// Create manual I/O queue to take care of hid report read requests
-	//
+	status = CrosECQueueInitialize(device);
+	if (!NT_SUCCESS(status)) {
+		CrosEcBusPrint(DEBUG_LEVEL_ERROR, DBG_PNP,
+			"CrosECQueueInitialize failed 0x%x\n", status);
+		return status;
+	}
 
 	devContext = GetDeviceContext(device);
 
