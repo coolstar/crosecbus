@@ -520,6 +520,37 @@ struct ec_params_read_memmap {
 
 #include <poppack.h>
 
+/* Read versions supported for a command */
+#define EC_CMD_GET_CMD_VERSIONS 0x0008
+
+#include <pshpack1.h>
+/**
+ * struct ec_params_get_cmd_versions - Parameters for the get command versions.
+ * @cmd: Command to check.
+ */
+struct ec_params_get_cmd_versions {
+	UINT8 cmd;
+};
+
+/**
+ * struct ec_params_get_cmd_versions_v1 - Parameters for the get command
+ *         versions (v1)
+ * @cmd: Command to check.
+ */
+struct ec_params_get_cmd_versions_v1 {
+	UINT16 cmd;
+};
+
+/**
+ * struct ec_response_get_cmd_version - Response to the get command versions.
+ * @version_mask: Mask of supported versions; use EC_VER_MASK() to compare with
+ *                a desired version.
+ */
+struct ec_response_get_cmd_versions {
+	UINT32 version_mask;
+};
+#include <poppack.h>
+
 /* Get protocol information */
 #define EC_CMD_GET_PROTOCOL_INFO	0x0b
 
@@ -649,6 +680,129 @@ struct ec_params_pwm_set_fan_duty_v0 {
 struct ec_params_pwm_set_fan_duty_v1 {
 	UINT32 percent;
 	UINT8 fan_idx;
+};
+
+#include <poppack.h>
+
+/*****************************************************************************/
+/* Hibernate/Deep Sleep Commands */
+
+/* Set the delay before going into hibernation. */
+#define EC_CMD_HIBERNATION_DELAY 0x00A8
+
+#include <pshpack4.h>
+
+struct ec_params_hibernation_delay {
+	/*
+	 * Seconds to wait in G3 before hibernate.  Pass in 0 to read the
+	 * current settings without changing them.
+	 */
+	UINT32 seconds;
+};
+
+struct ec_response_hibernation_delay {
+	/*
+	 * The current time in seconds in which the system has been in the G3
+	 * state.  This value is reset if the EC transitions out of G3.
+	 */
+	UINT32 time_g3;
+
+	/*
+	 * The current time remaining in seconds until the EC should hibernate.
+	 * This value is also reset if the EC transitions out of G3.
+	 */
+	UINT32 time_remaining;
+
+	/*
+	 * The current time in seconds that the EC should wait in G3 before
+	 * hibernating.
+	 */
+	UINT32 hibernate_delay;
+};
+
+#include <poppack.h>
+
+/* Inform the EC when entering a sleep state */
+#define EC_CMD_HOST_SLEEP_EVENT 0x00A9
+
+enum host_sleep_event {
+	HOST_SLEEP_EVENT_S3_SUSPEND = 1,
+	HOST_SLEEP_EVENT_S3_RESUME = 2,
+	HOST_SLEEP_EVENT_S0IX_SUSPEND = 3,
+	HOST_SLEEP_EVENT_S0IX_RESUME = 4,
+	/* S3 suspend with additional enabled wake sources */
+	HOST_SLEEP_EVENT_S3_WAKEABLE_SUSPEND = 5,
+};
+
+#include <pshpack1.h>
+
+struct ec_params_host_sleep_event {
+	UINT8 sleep_event;
+};
+
+#include <poppack.h>
+
+/*
+ * Use a default timeout value (CONFIG_SLEEP_TIMEOUT_MS) for detecting sleep
+ * transition failures
+ */
+#define EC_HOST_SLEEP_TIMEOUT_DEFAULT 0
+
+ /* Disable timeout detection for this sleep transition */
+#define EC_HOST_SLEEP_TIMEOUT_INFINITE 0xFFFF
+
+#include <pshpack2.h>
+
+struct ec_params_host_sleep_event_v1 {
+	/* The type of sleep being entered or exited. */
+	UINT8 sleep_event;
+
+	/* Padding */
+	UINT8 reserved;
+	union {
+		/* Parameters that apply for suspend messages. */
+		struct {
+			/*
+			 * The timeout in milliseconds between when this message
+			 * is received and when the EC will declare sleep
+			 * transition failure if the sleep signal is not
+			 * asserted.
+			 */
+			UINT16 sleep_timeout_ms;
+		} suspend_params;
+
+		/* No parameters for non-suspend messages. */
+	};
+};
+
+#include <poppack.h>
+
+/* A timeout occurred when this bit is set */
+#define EC_HOST_RESUME_SLEEP_TIMEOUT 0x80000000
+
+/*
+ * The mask defining which bits correspond to the number of sleep transitions,
+ * as well as the maximum number of suspend line transitions that will be
+ * reported back to the host.
+ */
+#define EC_HOST_RESUME_SLEEP_TRANSITIONS_MASK 0x7FFFFFFF
+
+#include <pshpack4.h>
+
+struct ec_response_host_sleep_event_v1 {
+	union {
+		/* Response fields that apply for resume messages. */
+		struct {
+			/*
+			 * The number of sleep power signal transitions that
+			 * occurred since the suspend message. The high bit
+			 * indicates a timeout occurred.
+			 */
+			UINT32 sleep_transitions;
+		} resume_response;
+
+		/* No response fields for non-resume messages. */
+	};
 };
 
 #include <poppack.h>

@@ -7,6 +7,11 @@
 #define bool int
 #define MS_IN_US 1000
 
+VOID
+CrosEcBusS0ixNotifyCallback(
+	PCROSECBUS_CONTEXT pDevice,
+	ULONG NotifyCode);
+
 static ULONG CrosEcBusDebugLevel = 100;
 static ULONG CrosEcBusDebugCatagories = DBG_INIT || DBG_PNP || DBG_IOCTL;
 
@@ -158,7 +163,7 @@ Status
 		return status;
 	}
 
-	struct ec_response_get_version r;
+	struct ec_response_get_version r = { 0 };
 	int rv = ec_command_proto(EC_CMD_GET_VERSION, 0, NULL, 0, &r, sizeof(struct ec_response_get_version));
 	if (rv >= 0) {
 		/* Ensure versions are null-terminated before we print them */
@@ -173,7 +178,7 @@ Status
 		return STATUS_DEVICE_CONFIGURATION_ERROR;
 	}
 
-	struct ec_response_get_features f;
+	struct ec_response_get_features f = { 0 };
 
 	rv = ec_command_proto(EC_CMD_GET_FEATURES, 0, NULL, 0, &f, sizeof(struct ec_response_get_features));
 	if (rv >= 0) {
@@ -186,6 +191,38 @@ Status
 		DbgPrint("Warning: Couldn't get device features\n");
 		pDevice->EcFeatures[0] = -1;
 		pDevice->EcFeatures[1] = -1;
+	}
+
+	status = WdfFdoQueryForInterface(FxDevice,
+		&GUID_ACPI_INTERFACE_STANDARD2,
+		(PINTERFACE)&pDevice->S0ixNotifyAcpiInterface,
+		sizeof(ACPI_INTERFACE_STANDARD2),
+		1,
+		NULL);
+
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	{
+		struct ec_params_get_cmd_versions_v1 req_v1 = { 0 };
+		struct ec_response_get_cmd_versions resp = { 0 };
+		req_v1.cmd = EC_CMD_HOST_SLEEP_EVENT;
+		rv = ec_command_proto(EC_CMD_GET_CMD_VERSIONS, 1, &req_v1, sizeof(req_v1), &resp, sizeof(resp));
+		if (rv >= 0) {
+			pDevice->hostSleepV1 = (resp.version_mask & EC_VER_MASK(1)) != 0;
+		}
+		else {
+			pDevice->hostSleepV1 = FALSE;
+		}
+	}
+
+	status = pDevice->S0ixNotifyAcpiInterface.RegisterForDeviceNotifications(
+		pDevice->S0ixNotifyAcpiInterface.Context,
+		(PDEVICE_NOTIFY_CALLBACK2)CrosEcBusS0ixNotifyCallback,
+		pDevice);
+	if (!NT_SUCCESS(status)) {
+		return status;
 	}
 
 	return status;
@@ -216,6 +253,10 @@ Status
 
 	PCROSECBUS_CONTEXT pDevice = GetDeviceContext(FxDevice);
 	UNREFERENCED_PARAMETER(FxResourcesTranslated);
+
+	if (pDevice->S0ixNotifyAcpiInterface.Context) { //Used for S0ix notifications
+		pDevice->S0ixNotifyAcpiInterface.UnregisterForDeviceNotifications(pDevice->S0ixNotifyAcpiInterface.Context);
+	}
 
 	if (pDevice->EcLock != NULL)
 	{
@@ -282,6 +323,75 @@ Status
 	NTSTATUS status = STATUS_SUCCESS;
 
 	return status;
+}
+
+static NTSTATUS send_ec_command(
+	_In_ PCROSECBUS_CONTEXT pDevice,
+	UINT32 cmd,
+	UINT32 version,
+	UINT8* out,
+	size_t outSize,
+	UINT8* in,
+	size_t inSize)
+{
+	PCROSEC_COMMAND msg = (PCROSEC_COMMAND)ExAllocatePoolWithTag(NonPagedPool, sizeof(CROSEC_COMMAND) + max(outSize, inSize), CROSECBUS_POOL_TAG);
+	if (!msg) {
+		return STATUS_NO_MEMORY;
+	}
+	msg->Version = version;
+	msg->Command = cmd;
+	msg->OutSize = outSize;
+	msg->InSize = inSize;
+
+	if (outSize)
+		memcpy(msg->Data, out, outSize);
+
+	NTSTATUS status = CrosEcCmdXferStatus(pDevice, msg);
+	if (!NT_SUCCESS(status)) {
+		goto exit;
+	}
+
+	if (in && inSize) {
+		memcpy(in, msg->Data, inSize);
+	}
+
+exit:
+	ExFreePoolWithTag(msg, CROSECBUS_POOL_TAG);
+	return status;
+}
+
+NTSTATUS CrosEcBusSleepEvent(
+	PCROSECBUS_CONTEXT pDevice,
+	UINT8 sleepEvent
+) {
+	if (!pDevice->hostSleepV1) {
+		DbgPrint("Warning: EC does not support S0ix!\n");
+		return STATUS_NOT_SUPPORTED;
+	}
+
+	struct ec_params_host_sleep_event_v1 req1 = { 0 };
+	struct ec_response_host_sleep_event_v1 resp1 = { 0 };
+
+	req1.sleep_event = sleepEvent;
+	req1.suspend_params.sleep_timeout_ms = EC_HOST_SLEEP_TIMEOUT_DEFAULT;
+
+	return send_ec_command(pDevice, EC_CMD_HOST_SLEEP_EVENT, 1, &req1, sizeof(req1), &resp1, sizeof(resp1));
+}
+
+VOID
+CrosEcBusS0ixNotifyCallback(
+	PCROSECBUS_CONTEXT pDevice,
+	ULONG NotifyCode) {
+	if (NotifyCode == 2 && pDevice->isInS0ix) {
+		if (NT_SUCCESS(CrosEcBusSleepEvent(pDevice, HOST_SLEEP_EVENT_S0IX_RESUME))) {
+			pDevice->isInS0ix = FALSE;
+		}
+	}
+	else if (NotifyCode == 1 && !pDevice->isInS0ix) {
+		if (NT_SUCCESS(CrosEcBusSleepEvent(pDevice, HOST_SLEEP_EVENT_S0IX_SUSPEND))) {
+			pDevice->isInS0ix = TRUE;
+		}
+	}
 }
 
 NTSTATUS

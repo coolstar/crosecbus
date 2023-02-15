@@ -11,10 +11,13 @@
 #pragma warning(default:4201)
 #pragma warning(default:4214)
 #include <wdf.h>
+#include <wdmguid.h>
 
 #pragma warning(disable:4201)  // suppress nameless struct/union warning
 #pragma warning(disable:4214)  // suppress bit field types other than int warning
 #include <hidport.h>
+
+#include <acpiioct.h>
 
 //
 // String definitions
@@ -98,6 +101,11 @@ typedef struct _CROSECBUS_CONTEXT
     UINT32 EcFeatures[2];
 
     WDFWAITLOCK EcLock;
+
+    //S0IX Notify
+    ACPI_INTERFACE_STANDARD2 S0ixNotifyAcpiInterface;
+    BOOLEAN isInS0ix;
+    BOOLEAN hostSleepV1;
 
 } CROSECBUS_CONTEXT, *PCROSECBUS_CONTEXT;
 
