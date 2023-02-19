@@ -90,15 +90,6 @@ static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 	return 0;
 }
 
-static UINT8 ec_checksum_buffer(char* data, size_t size)
-{
-	UINT8 sum = 0;
-	for (int i = 0; i < size; ++i) {
-		sum += data[i];
-	}
-	return sum;
-};
-
 static int ec_command_lpc_mec_3(int command, int version, const void* outdata,
 	int outsize, void* indata, int insize)
 {
