@@ -102,43 +102,42 @@ static UINT8 ec_checksum_buffer(char* data, size_t size)
 static int ec_command_lpc_mec_3(int command, int version, const void* outdata,
 	int outsize, void* indata, int insize)
 {
-	UINT8 csum = 0;
+	
+	struct ec_host_request rq;
+	struct ec_host_response rs;
+	const UINT8* d;
+	UINT8* dout;
+	int csum = 0;
 	int i;
 
-	union {
-		struct ec_host_request rq;
-		char data[EC_LPC_HOST_PACKET_SIZE];
-	} u;
-
-	union {
-		struct ec_host_response rs;
-		char data[EC_LPC_HOST_PACKET_SIZE];
-	} r;
-
 	/* Fail if output size is too big */
-	if (outsize + sizeof(u.rq) > EC_LPC_HOST_PACKET_SIZE)
+	if (outsize + sizeof(rq) > EC_LPC_HOST_PACKET_SIZE)
 		return -EC_RES_REQUEST_TRUNCATED;
 
 	/* Fill in request packet */
 	/* TODO(crosbug.com/p/23825): This should be common to all protocols */
-	u.rq.struct_version = EC_HOST_REQUEST_VERSION;
-	u.rq.checksum = 0;
-	u.rq.command = command;
-	u.rq.command_version = version;
-	u.rq.reserved = 0;
-	u.rq.data_len = outsize;
+	rq.struct_version = EC_HOST_REQUEST_VERSION;
+	rq.checksum = 0;
+	rq.command = command;
+	rq.command_version = version;
+	rq.reserved = 0;
+	rq.data_len = outsize;
 
-	memcpy(&u.data[sizeof(u.rq)], outdata, outsize);
-	csum = ec_checksum_buffer(u.data, outsize + sizeof(u.rq));
-	u.rq.checksum = (UINT8)(-csum);
-
-	if (wait_for_ec(EC_LPC_ADDR_HOST_CMD, 1000000)) {
-		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
-			"Timeout waiting for EC response\n");
-		return -EC_RES_ERROR;
+	/* Copy data and update checksum */
+	ec_mec_xfer(EC_MEC_WRITE, sizeof(rq), outdata, outsize);
+	for (i = 0, d = (const UINT8*)outdata; i < outsize; i++, d++) {
+		csum += *d;
 	}
 
-	ec_mec_xfer(EC_MEC_WRITE, 0, u.data, outsize + sizeof(u.rq));
+	/* Finish checksum */
+	for (i = 0, d = (const UINT8*)&rq; i < sizeof(rq); i++, d++)
+		csum += *d;
+
+	/* Write checksum field so the entire packet sums to 0 */
+	rq.checksum = (UINT8)(-csum);
+
+	/* Copy header */
+	ec_mec_xfer(EC_MEC_WRITE, 0, &rq, sizeof(rq));
 
 	/* Start the command */
 	outb(EC_COMMAND_PROTOCOL_3, EC_LPC_ADDR_HOST_CMD);
@@ -157,38 +156,46 @@ static int ec_command_lpc_mec_3(int command, int version, const void* outdata,
 		return -EECRESULT - i;
 	}
 
+	/* Read back response header and start checksum */
+	ec_mec_xfer(EC_MEC_READ, 0, &rs, sizeof(rs));
 	csum = 0;
-	ec_mec_xfer(EC_MEC_READ, 0, r.data, sizeof(r.rs));
+	for (i = 0, dout = (UINT8*)&rs; i < sizeof(rs); i++, dout++) {
+		csum += *dout;
+	}
 
-	if (r.rs.struct_version != EC_HOST_RESPONSE_VERSION) {
+	if (rs.struct_version != EC_HOST_RESPONSE_VERSION) {
 		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
 			"EC response version mismatch\n");
 		return -EC_RES_INVALID_RESPONSE;
 	}
 
-	if (r.rs.reserved) {
+	if (rs.reserved) {
 		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
 			"EC response reserved != 0\n");
 		return -EC_RES_INVALID_RESPONSE;
 	}
 
-	if (r.rs.data_len > insize) {
+	if (rs.data_len > insize) {
 		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
 			"EC returned too much data\n");
 		return -EC_RES_RESPONSE_TOO_BIG;
 	}
 
-	if (r.rs.data_len > 0) {
-		ec_mec_xfer(EC_MEC_READ, 8, r.data + sizeof(r.rs), r.rs.data_len);
-		if (ec_checksum_buffer(r.data, sizeof(r.rs) + r.rs.data_len)) {
-			CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
-				"EC response has invalid checksum\n");
-			return -EC_RES_INVALID_CHECKSUM;
-		}
-
-		memcpy(indata, r.data + sizeof(r.rs), r.rs.data_len);
+	/* Read back data and update checksum */
+	ec_mec_xfer(EC_MEC_READ, sizeof(rs), indata, rs.data_len);
+	for (i = 0, dout = (UINT8*)indata; i < rs.data_len; i++, dout++) {
+		csum += *dout;
 	}
-	return r.rs.data_len;
+
+	/* Verify checksum */
+	if ((UINT8)csum) {
+		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
+			"EC response has invalid checksum\n");
+		return -EC_RES_INVALID_CHECKSUM;
+	}
+
+	/* Return actual amount of data received */
+	return rs.data_len;
 }
 
 static int ec_readmem_lpc_mec(int offset, int bytes, void* dest)
