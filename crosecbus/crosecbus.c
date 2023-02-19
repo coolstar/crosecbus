@@ -392,6 +392,9 @@ CrosEcBusS0ixNotifyCallback(
 			pDevice->isInS0ix = TRUE;
 		}
 	}
+	else {
+		DbgPrint("Got MKBP?\n");
+	}
 }
 
 NTSTATUS

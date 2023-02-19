@@ -157,6 +157,30 @@ static int ec_command_lpc(int command, int version,
 	return args.data_size;
 }
 
+static UINT8 ec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest) {
+	int sum = 0;
+	int i;
+	for (i = 0; i < length; ++i) {
+		dest[i] = inb(offset + i);
+		sum += dest[i];
+	}
+
+	/* Return checksum of all bytes read */
+	return sum;
+}
+
+static UINT8 ec_lpc_write_bytes(unsigned int offset, unsigned int length, UINT8* msg) {
+	int sum = 0;
+	int i;
+	for (i = 0; i < length; ++i) {
+		outb(msg[i], offset + i);
+		sum += msg[i];
+	}
+
+	/* Return checksum of all bytes written */
+	return sum;
+}
+
 static int ec_command_lpc_3(int command, int version,
 	const void* outdata, int outsize,
 	void* indata, int insize)
@@ -181,9 +205,9 @@ static int ec_command_lpc_3(int command, int version,
 	rq.reserved = 0;
 	rq.data_len = outsize;
 
-	/* Copy data and start checksum */
+	/* Copy data and update checksum */
+	ec_lpc_write_bytes(EC_LPC_ADDR_HOST_PACKET + sizeof(rq), outsize, outdata);
 	for (i = 0, d = (const UINT8*)outdata; i < outsize; i++, d++) {
-		outb(*d, EC_LPC_ADDR_HOST_PACKET + sizeof(rq) + i);
 		csum += *d;
 	}
 
@@ -195,8 +219,7 @@ static int ec_command_lpc_3(int command, int version,
 	rq.checksum = (UINT8)(-csum);
 
 	/* Copy header */
-	for (i = 0, d = (const UINT8*)&rq; i < sizeof(rq); i++, d++)
-		outb(*d, EC_LPC_ADDR_HOST_PACKET + i);
+	ec_lpc_write_bytes(EC_LPC_ADDR_HOST_PACKET, sizeof(rq), &rq);
 
 	/* Start the command */
 	outb(EC_COMMAND_PROTOCOL_3, EC_LPC_ADDR_HOST_CMD);
@@ -216,9 +239,9 @@ static int ec_command_lpc_3(int command, int version,
 	}
 
 	/* Read back response header and start checksum */
+	ec_lpc_read_bytes(EC_LPC_ADDR_HOST_PACKET, sizeof(rs), &rs);
 	csum = 0;
 	for (i = 0, dout = (UINT8*)&rs; i < sizeof(rs); i++, dout++) {
-		*dout = inb(EC_LPC_ADDR_HOST_PACKET + i);
 		csum += *dout;
 	}
 
@@ -241,8 +264,8 @@ static int ec_command_lpc_3(int command, int version,
 	}
 
 	/* Read back data and update checksum */
+	ec_lpc_read_bytes(EC_LPC_ADDR_HOST_PACKET + sizeof(rs), rs.data_len, indata);
 	for (i = 0, dout = (UINT8*)indata; i < rs.data_len; i++, dout++) {
-		*dout = inb(EC_LPC_ADDR_HOST_PACKET + sizeof(rs) + i);
 		csum += *dout;
 	}
 
