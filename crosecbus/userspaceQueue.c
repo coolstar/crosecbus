@@ -91,8 +91,8 @@ NTSTATUS CrosECIoctlXCmd(_In_ PCROSECBUS_CONTEXT pDevice, _In_ WDFREQUEST Reques
 	NT_ANALYSIS_ASSUME(outLen >= sizeof(*cmd));
 
 	// User tried to send/receive too much data
-	NT_RETURN_IF(STATUS_BUFFER_OVERFLOW, cmdLen > ec_max_insize);
-	NT_RETURN_IF(STATUS_BUFFER_OVERFLOW, outLen > ec_max_outsize);
+	NT_RETURN_IF(STATUS_BUFFER_OVERFLOW, cmdLen > (sizeof(CROSEC_COMMAND) + ec_max_insize));
+	NT_RETURN_IF(STATUS_BUFFER_OVERFLOW, outLen > (sizeof(CROSEC_COMMAND) + ec_max_outsize));
 	// User tried to send/receive more bytes than they offered in storage
 	NT_RETURN_IF(STATUS_BUFFER_TOO_SMALL, cmdLen < (sizeof(CROSEC_COMMAND) + cmd->OutSize));
 	NT_RETURN_IF(STATUS_BUFFER_TOO_SMALL, outLen < (sizeof(CROSEC_COMMAND) + cmd->InSize));
