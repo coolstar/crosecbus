@@ -24,11 +24,11 @@ static __inline unsigned short inw(unsigned int __port) {
 static ULONG CrosEcBusDebugLevel = 100;
 static ULONG CrosEcBusDebugCatagories = DBG_INIT || DBG_PNP || DBG_IOCTL;
 
-int ec_max_outsize, ec_max_insize;
+UINT32 ec_max_outsize, ec_max_insize;
 
 lpc_driver_ops ec_lpc_ops = {0};
 
-int (*ec_command_proto)(int command, int version,
+int (*ec_command_proto)(UINT16 command, UINT8 version,
 	const void* outdata, int outsize,
 	void* indata, int insize);
 int (*ec_readmem)(int offset, int bytes, void* dest);
@@ -39,7 +39,6 @@ int (*ec_readmem)(int offset, int bytes, void* dest);
  */
 int wait_for_ec(int status_addr, int timeout_usec)
 {
-	int i;
 	LARGE_INTEGER StartTime;
 	KeQuerySystemTimePrecise(&StartTime);
 
@@ -71,7 +70,7 @@ int wait_for_ec(int status_addr, int timeout_usec)
 	return -1;  /* Timeout */
 }
 
-static int ec_command_lpc(int command, int version,
+static int ec_command_lpc(UINT16 command, UINT8 version,
 	const void* outdata, int outsize,
 	void* indata, int insize)
 {
@@ -84,7 +83,7 @@ static int ec_command_lpc(int command, int version,
 	/* Fill in args */
 	args.flags = EC_HOST_ARGS_FLAG_FROM_HOST;
 	args.command_version = version;
-	args.data_size = outsize;
+	args.data_size = (UINT8)outsize;
 
 	/* Initialize checksum */
 	csum = command + args.flags + args.command_version + args.data_size;
@@ -100,7 +99,7 @@ static int ec_command_lpc(int command, int version,
 	for (i = 0, d = (const UINT8*)&args; i < sizeof(args); i++, d++)
 		outb(*d, EC_LPC_ADDR_HOST_ARGS + i);
 
-	outb(command, EC_LPC_ADDR_HOST_CMD);
+	outb((UINT8)command, EC_LPC_ADDR_HOST_CMD);
 
 	if (wait_for_ec(EC_LPC_ADDR_HOST_CMD, 1000000)) {
 		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
@@ -158,9 +157,9 @@ static int ec_command_lpc(int command, int version,
 	return args.data_size;
 }
 
-UINT8 ec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest) {
+int ec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest) {
 	int sum = 0;
-	int i;
+	unsigned int i;
 	for (i = 0; i < length; ++i) {
 		dest[i] = inb(offset + i);
 		sum += dest[i];
@@ -170,9 +169,9 @@ UINT8 ec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest) {
 	return sum;
 }
 
-UINT8 ec_lpc_write_bytes(unsigned int offset, unsigned int length, UINT8* msg) {
+int ec_lpc_write_bytes(unsigned int offset, unsigned int length, const UINT8* msg) {
 	int sum = 0;
-	int i;
+	unsigned int i;
 	for (i = 0; i < length; ++i) {
 		outb(msg[i], offset + i);
 		sum += msg[i];
@@ -182,7 +181,7 @@ UINT8 ec_lpc_write_bytes(unsigned int offset, unsigned int length, UINT8* msg) {
 	return sum;
 }
 
-static int ec_command_lpc_3(int command, int version,
+static int ec_command_lpc_3(UINT16 command, UINT8 version,
 	const void* outdata, int outsize,
 	void* indata, int insize)
 {
@@ -220,7 +219,7 @@ static int ec_command_lpc_3(int command, int version,
 	rq.checksum = (UINT8)(-csum);
 
 	/* Copy header */
-	ec_lpc_ops.write(EC_LPC_ADDR_HOST_PACKET, sizeof(rq), &rq);
+	ec_lpc_ops.write(EC_LPC_ADDR_HOST_PACKET, sizeof(rq), (const UINT8 *)&rq);
 
 	/* Start the command */
 	outb(EC_COMMAND_PROTOCOL_3, EC_LPC_ADDR_HOST_CMD);
@@ -240,7 +239,7 @@ static int ec_command_lpc_3(int command, int version,
 	}
 
 	/* Read back response header and start checksum */
-	ec_lpc_ops.read(EC_LPC_ADDR_HOST_PACKET, sizeof(rs), &rs);
+	ec_lpc_ops.read(EC_LPC_ADDR_HOST_PACKET, sizeof(rs), (UINT8*)&rs);
 	csum = 0;
 	for (i = 0, dout = (UINT8*)&rs; i < sizeof(rs); i++, dout++) {
 		csum += *dout;
@@ -284,7 +283,7 @@ static int ec_command_lpc_3(int command, int version,
 static int ec_readmem_lpc(int offset, int bytes, void* dest)
 {
 	int i = offset;
-	char* s = (char*)(dest);
+	UINT8* s = (UINT8*)(dest);
 	int cnt = 0;
 
 	if (offset >= EC_MEMMAP_SIZE - bytes)
@@ -333,7 +332,7 @@ NTSTATUS comm_init_lpc(void)
 	/* All EC's supports reading mapped memory directly. */
 	ec_readmem = ec_readmem_lpc;
 
-	char signature[2];
+	UINT8 signature[2];
 
 	/* Check for a MEC first. */
 	if (comm_init_lpc_mec && NT_SUCCESS(comm_init_lpc_mec())) {

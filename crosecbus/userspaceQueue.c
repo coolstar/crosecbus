@@ -80,7 +80,7 @@ NTSTATUS CrosECQueueInitialize(_In_ WDFDEVICE Device) {
 	return status;
 }
 
-NTSTATUS CrosECIoctlXCmd(_In_ WDFDEVICE Device, _In_ PCROSECBUS_CONTEXT pDevice, _In_ WDFREQUEST Request) {
+NTSTATUS CrosECIoctlXCmd(_In_ PCROSECBUS_CONTEXT pDevice, _In_ WDFREQUEST Request) {
 	PCROSEC_COMMAND cmd;
 	size_t cmdLen;
 	NT_RETURN_IF_NTSTATUS_FAILED(WdfRequestRetrieveInputBuffer(Request, sizeof(cmd), (PVOID*)&cmd, &cmdLen));
@@ -110,7 +110,7 @@ NTSTATUS CrosECIoctlXCmd(_In_ WDFDEVICE Device, _In_ PCROSECBUS_CONTEXT pDevice,
 
 	int tries = 5; //Wait our turn if kernel driver wants to access first
 	while (tries > 0) {
-		LONG accesses = InterlockedCompareExchange64(&pDevice->KernelAccessesWaiting, 0, 0);
+		LONG64 accesses = InterlockedCompareExchange64(&pDevice->KernelAccessesWaiting, 0, 0);
 		if (accesses == 0) //No kernel driver access. We're good to go.
 			break;
 
@@ -159,7 +159,7 @@ NTSTATUS CrosECIoctlXCmd(_In_ WDFDEVICE Device, _In_ PCROSECBUS_CONTEXT pDevice,
 	return STATUS_SUCCESS;
 }
 
-NTSTATUS CrosECIoctlReadMem(_In_ WDFDEVICE Device, _In_ PCROSECBUS_CONTEXT pDevice, _In_ WDFREQUEST Request) {
+NTSTATUS CrosECIoctlReadMem(_In_ WDFREQUEST Request) {
 	PCROSEC_READMEM rq, rs;
 	NT_RETURN_IF_NTSTATUS_FAILED(WdfRequestRetrieveInputBuffer(Request, sizeof(*rq), (PVOID*)&rq, NULL));
 	NT_RETURN_IF_NTSTATUS_FAILED(WdfRequestRetrieveOutputBuffer(Request, sizeof(*rs), (PVOID*)&rs, NULL));
@@ -188,6 +188,8 @@ VOID CrosECEvtIoDeviceControl(_In_ WDFQUEUE Queue,
 	CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
 		"%!FUNC! Queue 0x%p, Request 0x%p OutputBufferLength %d InputBufferLength %d IoControlCode %d",
 		Queue, Request, (int)OutputBufferLength, (int)InputBufferLength, IoControlCode);
+	UNREFERENCED_PARAMETER(InputBufferLength);
+	UNREFERENCED_PARAMETER(OutputBufferLength);
 
 	WDFDEVICE device = WdfIoQueueGetDevice(Queue);
 	PCROSECBUS_CONTEXT deviceContext = GetDeviceContext(device);
@@ -195,11 +197,11 @@ VOID CrosECEvtIoDeviceControl(_In_ WDFQUEUE Queue,
 
 	switch (IoControlCode) {
 	case IOCTL_CROSEC_XCMD: {
-		Status = CrosECIoctlXCmd(device, deviceContext, Request);
+		Status = CrosECIoctlXCmd(deviceContext, Request);
 		break;
 	}
 	case IOCTL_CROSEC_RDMEM: {
-		Status = CrosECIoctlReadMem(device, deviceContext, Request);
+		Status = CrosECIoctlReadMem(Request);
 		break;
 	}
 	}
@@ -212,6 +214,10 @@ VOID CrosECEvtIoDeviceControl(_In_ WDFQUEUE Queue,
 VOID CrosECEvtIoStop(_In_ WDFQUEUE Queue, _In_ WDFREQUEST Request, _In_ ULONG ActionFlags) {
 	CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL, "%!FUNC! Queue 0x%p, Request 0x%p ActionFlags %d", Queue,
 		Request, ActionFlags);
+
+	UNREFERENCED_PARAMETER(Queue);
+	UNREFERENCED_PARAMETER(Request);
+	UNREFERENCED_PARAMETER(ActionFlags);
 
 	//
 	// In most cases, the EvtIoStop callback function completes, cancels, or postpones

@@ -140,17 +140,17 @@ static int cros_ec_lpc_mec_in_range(unsigned int offset, unsigned int length) {
 	return 0;
 }
 
-UINT8 ec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest);
-UINT8 ec_lpc_write_bytes(unsigned int offset, unsigned int length, UINT8* msg);
+int ec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest);
+int ec_lpc_write_bytes(unsigned int offset, unsigned int length, const UINT8* msg);
 
-static UINT8 ec_mec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest) {
+static int ec_mec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest) {
 	int in_range = cros_ec_lpc_mec_in_range(offset, length);
 	if (!in_range) {
 		return ec_lpc_read_bytes(offset, length, dest);
 	}
 
 	int sum = 0;
-	int i;
+	unsigned int i;
 	ec_mec_xfer(EC_MEC_READ, offset - EC_HOST_CMD_REGION0, dest, length);
 	for (i = 0; i < length; ++i) {
 		sum += dest[i];
@@ -160,14 +160,14 @@ static UINT8 ec_mec_lpc_read_bytes(unsigned int offset, unsigned int length, UIN
 	return sum;
 }
 
-static UINT8 ec_mec_lpc_write_bytes(unsigned int offset, unsigned int length, UINT8* msg) {
+static int ec_mec_lpc_write_bytes(unsigned int offset, unsigned int length, const UINT8* msg) {
 	int in_range = cros_ec_lpc_mec_in_range(offset, length);
 	if (!in_range) {
 		return ec_lpc_write_bytes(offset, length, msg);
 	}
 
 	int sum = 0;
-	int i;
+	unsigned int i;
 	ec_mec_xfer(EC_MEC_WRITE, offset - EC_HOST_CMD_REGION0, msg, length);
 	for (i = 0; i < length; ++i) {
 		sum += msg[i];

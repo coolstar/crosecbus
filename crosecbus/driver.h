@@ -100,7 +100,7 @@ typedef struct _CROSECBUS_CONTEXT
 
     UINT32 EcFeatures[2];
 
-    UINT64 KernelAccessesWaiting;
+    LONG64 KernelAccessesWaiting;
     WDFWAITLOCK EcLock;
 
     //S0IX Notify

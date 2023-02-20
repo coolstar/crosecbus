@@ -80,7 +80,7 @@ static NTSTATUS CrosEcCmdXferStatus(
 		int cmdstatus = ec_command_proto(Msg->Command, Msg->Version, Msg->Data, Msg->OutSize, Msg->Data, Msg->InSize);
 
 		InterlockedDecrement64(&pDevice->KernelAccessesWaiting);
-		WdfWaitLockRelease(pDevice->EcLock, NULL);
+		WdfWaitLockRelease(pDevice->EcLock);
 
 		if (cmdstatus >= 0) {
 			return STATUS_SUCCESS;
@@ -377,7 +377,7 @@ NTSTATUS CrosEcBusSleepEvent(
 	req1.sleep_event = sleepEvent;
 	req1.suspend_params.sleep_timeout_ms = EC_HOST_SLEEP_TIMEOUT_DEFAULT;
 
-	return send_ec_command(pDevice, EC_CMD_HOST_SLEEP_EVENT, 1, &req1, sizeof(req1), &resp1, sizeof(resp1));
+	return send_ec_command(pDevice, EC_CMD_HOST_SLEEP_EVENT, 1, (UINT8 *)&req1, sizeof(req1), (UINT8 *)&resp1, sizeof(resp1));
 }
 
 VOID
@@ -408,7 +408,6 @@ IN PWDFDEVICE_INIT DeviceInit
 	NTSTATUS                      status = STATUS_SUCCESS;
 	WDF_OBJECT_ATTRIBUTES         attributes;
 	WDFDEVICE                     device;
-	UCHAR                         minorFunction;
 	PCROSECBUS_CONTEXT               devContext;
 	WDF_QUERY_INTERFACE_CONFIG  qiConfig;
 
