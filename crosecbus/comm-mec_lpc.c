@@ -30,15 +30,22 @@ typedef enum _ec_xfer_direction { EC_MEC_WRITE, EC_MEC_READ } ec_xfer_direction;
 #define MEC_EC_BYTE_ACCESS               0x00
 #define MEC_EC_LONG_ACCESS_AUTOINCREMENT 0x03
 
-#define MEC_EC_ADDRESS_REGISTER0      0x0802
-#define MEC_EC_ADDRESS_REGISTER1      0x0803
-#define MEC_EC_DATA_REGISTER0         0x0804
-#define MEC_EC_DATA_REGISTER2         0x0806
-#define MEC_EC_MEMMAP_START            0x100
+/* EMI registers are relative to base */
+#define MEC_EMI_HOST_TO_EC(MEC_EMI_BASE)	((MEC_EMI_BASE) + 0)
+#define MEC_EMI_EC_TO_HOST(MEC_EMI_BASE)	((MEC_EMI_BASE) + 1)
+#define MEC_EMI_EC_ADDRESS_B0(MEC_EMI_BASE)	((MEC_EMI_BASE) + 2)
+#define MEC_EMI_EC_ADDRESS_B1(MEC_EMI_BASE)	((MEC_EMI_BASE) + 3)
+#define MEC_EMI_EC_DATA_B0(MEC_EMI_BASE)	((MEC_EMI_BASE) + 4)
+#define MEC_EMI_EC_DATA_B1(MEC_EMI_BASE)	((MEC_EMI_BASE) + 5)
+#define MEC_EMI_EC_DATA_B2(MEC_EMI_BASE)	((MEC_EMI_BASE) + 6)
+#define MEC_EMI_EC_DATA_B3(MEC_EMI_BASE)	((MEC_EMI_BASE) + 7)
 
 static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 	char* data, UINT16 size)
 {
+	if (mec_emi_base == 0 || mec_emi_end == 0)
+		return 0;
+
 	/*
 	 * There's a cleverer way to do this, but it's somewhat less clear what's happening.
 	 * I prefer clarity over cleverness. :)
@@ -46,29 +53,29 @@ static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 	int pos = 0;
 	UINT16 temp[2];
 	if (address % 4 > 0) {
-		outw((address & 0xFFFC) | MEC_EC_BYTE_ACCESS, MEC_EC_ADDRESS_REGISTER0);
+		outw((address & 0xFFFC) | MEC_EC_BYTE_ACCESS, MEC_EMI_EC_ADDRESS_B0(mec_emi_base));
 		/* Unaligned start address */
 		for (int i = address % 4; i < 4; ++i) {
 			char* storage = &data[pos++];
 			if (direction == EC_MEC_WRITE)
-				outb(*storage, MEC_EC_DATA_REGISTER0 + i);
+				outb(*storage, MEC_EMI_EC_DATA_B0(mec_emi_base) + i);
 			else if (direction == EC_MEC_READ)
-				*storage = inb(MEC_EC_DATA_REGISTER0 + i);
+				*storage = inb(MEC_EMI_EC_DATA_B0(mec_emi_base) + i);
 		}
 		address = (address + 4) & 0xFFFC;
 	}
 
 	if (size - pos >= 4) {
-		outw((address & 0xFFFC) | MEC_EC_LONG_ACCESS_AUTOINCREMENT, MEC_EC_ADDRESS_REGISTER0);
+		outw((address & 0xFFFC) | MEC_EC_LONG_ACCESS_AUTOINCREMENT, MEC_EMI_EC_ADDRESS_B0(mec_emi_base));
 		while (size - pos >= 4) {
 			if (direction == EC_MEC_WRITE) {
 				memcpy(temp, &data[pos], sizeof(temp));
-				outw(temp[0], MEC_EC_DATA_REGISTER0);
-				outw(temp[1], MEC_EC_DATA_REGISTER2);
+				outw(temp[0], MEC_EMI_EC_DATA_B0(mec_emi_base));
+				outw(temp[1], MEC_EMI_EC_DATA_B2(mec_emi_base));
 			}
 			else if (direction == EC_MEC_READ) {
-				temp[0] = inw(MEC_EC_DATA_REGISTER0);
-				temp[1] = inw(MEC_EC_DATA_REGISTER2);
+				temp[0] = inw(MEC_EMI_EC_DATA_B0(mec_emi_base));
+				temp[1] = inw(MEC_EMI_EC_DATA_B2(mec_emi_base));
 				memcpy(&data[pos], temp, sizeof(temp));
 			}
 
@@ -78,13 +85,13 @@ static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 	}
 
 	if (size - pos > 0) {
-		outw((address & 0xFFFC) | MEC_EC_BYTE_ACCESS, MEC_EC_ADDRESS_REGISTER0);
+		outw((address & 0xFFFC) | MEC_EC_BYTE_ACCESS, MEC_EMI_EC_ADDRESS_B0(mec_emi_base));
 		for (int i = 0; i < (size - pos); ++i) {
 			char* storage = &data[pos + i];
 			if (direction == EC_MEC_WRITE)
-				outb(*storage, MEC_EC_DATA_REGISTER0 + i);
+				outb(*storage, MEC_EMI_EC_DATA_B0(mec_emi_base) + i);
 			else if (direction == EC_MEC_READ)
-				*storage = inb(MEC_EC_DATA_REGISTER0 + i);
+				*storage = inb(MEC_EMI_EC_DATA_B0(mec_emi_base) + i);
 		}
 	}
 	return 0;
