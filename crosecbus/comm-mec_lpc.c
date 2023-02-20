@@ -90,146 +90,72 @@ static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 	return 0;
 }
 
-static int ec_command_lpc_mec_3(int command, int version, const void* outdata,
-	int outsize, void* indata, int insize)
-{
-	
-	struct ec_host_request rq;
-	struct ec_host_response rs;
-	const UINT8* d;
-	UINT8* dout;
-	int csum = 0;
-	int i;
-
-	/* Fail if output size is too big */
-	if (outsize + sizeof(rq) > EC_LPC_HOST_PACKET_SIZE)
-		return -EC_RES_REQUEST_TRUNCATED;
-
-	/* Fill in request packet */
-	/* TODO(crosbug.com/p/23825): This should be common to all protocols */
-	rq.struct_version = EC_HOST_REQUEST_VERSION;
-	rq.checksum = 0;
-	rq.command = command;
-	rq.command_version = version;
-	rq.reserved = 0;
-	rq.data_len = outsize;
-
-	/* Copy data and update checksum */
-	ec_mec_xfer(EC_MEC_WRITE, sizeof(rq), outdata, outsize);
-	for (i = 0, d = (const UINT8*)outdata; i < outsize; i++, d++) {
-		csum += *d;
-	}
-
-	/* Finish checksum */
-	for (i = 0, d = (const UINT8*)&rq; i < sizeof(rq); i++, d++)
-		csum += *d;
-
-	/* Write checksum field so the entire packet sums to 0 */
-	rq.checksum = (UINT8)(-csum);
-
-	/* Copy header */
-	ec_mec_xfer(EC_MEC_WRITE, 0, &rq, sizeof(rq));
-
-	/* Start the command */
-	outb(EC_COMMAND_PROTOCOL_3, EC_LPC_ADDR_HOST_CMD);
-
-	if (wait_for_ec(EC_LPC_ADDR_HOST_CMD, 1000000)) {
-		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
-			"Timeout waiting for EC response\n");
-		return -EC_RES_ERROR;
-	}
-
-	/* Check result */
-	i = inb(EC_LPC_ADDR_HOST_DATA);
-	if (i) {
-		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
-			"EC returned error result code %d\n", i);
-		return -EECRESULT - i;
-	}
-
-	/* Read back response header and start checksum */
-	ec_mec_xfer(EC_MEC_READ, 0, &rs, sizeof(rs));
-	csum = 0;
-	for (i = 0, dout = (UINT8*)&rs; i < sizeof(rs); i++, dout++) {
-		csum += *dout;
-	}
-
-	if (rs.struct_version != EC_HOST_RESPONSE_VERSION) {
-		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
-			"EC response version mismatch\n");
-		return -EC_RES_INVALID_RESPONSE;
-	}
-
-	if (rs.reserved) {
-		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
-			"EC response reserved != 0\n");
-		return -EC_RES_INVALID_RESPONSE;
-	}
-
-	if (rs.data_len > insize) {
-		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
-			"EC returned too much data\n");
-		return -EC_RES_RESPONSE_TOO_BIG;
-	}
-
-	/* Read back data and update checksum */
-	ec_mec_xfer(EC_MEC_READ, sizeof(rs), indata, rs.data_len);
-	for (i = 0, dout = (UINT8*)indata; i < rs.data_len; i++, dout++) {
-		csum += *dout;
-	}
-
-	/* Verify checksum */
-	if ((UINT8)csum) {
-		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL,
-			"EC response has invalid checksum\n");
-		return -EC_RES_INVALID_CHECKSUM;
-	}
-
-	/* Return actual amount of data received */
-	return rs.data_len;
-}
-
-static int ec_readmem_lpc_mec(int offset, int bytes, void* dest)
-{
-	int i = offset;
-	int cnt = 0;
-	char* s = dest;
-
-	if (offset >= EC_MEMMAP_SIZE - bytes)
+UINT16 mec_emi_base = 0, mec_emi_end = 0;
+static int cros_ec_lpc_mec_in_range(unsigned int offset, unsigned int length) {
+	if (length == 0)
 		return -1;
 
-	if (bytes) {
-		ec_mec_xfer(EC_MEC_READ, MEC_EC_MEMMAP_START + i, dest, bytes);
-		cnt = bytes;
+	if (mec_emi_base == 0 || mec_emi_end == 0)
+		return -1;
+
+	if (offset >= mec_emi_base && offset < mec_emi_end) {
+		if (offset + length - 1 >= mec_emi_end)
+			return -1;
+		return 1;
 	}
-	else {
-		/* Somewhat brute-force to set up a bunch of
-		 * individual transfers, but clearer than copying the xfer code
-		 * to add a stop condition.
-		 */
-		for (; i < EC_MEMMAP_SIZE; ++i, ++s) {
-			ec_mec_xfer(EC_MEC_READ, MEC_EC_MEMMAP_START + i, s, 1);
-			cnt++;
-			if (!*s)
-				break;
-		}
+
+	if (offset + length > mec_emi_base && offset < mec_emi_end)
+		return -1;
+
+	return 0;
+}
+
+UINT8 ec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest);
+UINT8 ec_lpc_write_bytes(unsigned int offset, unsigned int length, UINT8* msg);
+
+static UINT8 ec_mec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest) {
+	int in_range = cros_ec_lpc_mec_in_range(offset, length);
+	if (!in_range) {
+		return ec_lpc_read_bytes(offset, length, dest);
 	}
-	return cnt;
+
+	int sum = 0;
+	int i;
+	ec_mec_xfer(EC_MEC_READ, offset - EC_HOST_CMD_REGION0, dest, length);
+	for (i = 0; i < length; ++i) {
+		sum += dest[i];
+	}
+
+	/* Return checksum of all bytes read */
+	return sum;
+}
+
+static UINT8 ec_mec_lpc_write_bytes(unsigned int offset, unsigned int length, UINT8* msg) {
+	int in_range = cros_ec_lpc_mec_in_range(offset, length);
+	if (!in_range) {
+		return ec_lpc_write_bytes(offset, length, msg);
+	}
+
+	int sum = 0;
+	int i;
+	ec_mec_xfer(EC_MEC_WRITE, offset - EC_HOST_CMD_REGION0, msg, length);
+	for (i = 0; i < length; ++i) {
+		sum += msg[i];
+	}
+
+	/* Return checksum of all bytes written */
+	return sum;
 }
 
 NTSTATUS comm_init_lpc_mec(void)
 {
-	char signature[2];
-
 	/* This function assumes some setup was done by comm_init_lpc. */
+	
+	mec_emi_base = EC_HOST_CMD_REGION0;
+	mec_emi_end = EC_LPC_ADDR_MEMMAP + EC_MEMMAP_SIZE;
 
-	ec_readmem_lpc_mec(EC_MEMMAP_ID, 2, &signature[0]);
-	if (signature[0] != 'E' || signature[1] != 'C') {
-		return STATUS_INVALID_DEVICE_STATE;
-	}
-
-	ec_command_proto = ec_command_lpc_mec_3;
-	ec_readmem = ec_readmem_lpc_mec;
+	ec_lpc_ops.read = ec_mec_lpc_read_bytes;
+	ec_lpc_ops.write = ec_mec_lpc_write_bytes;
 
 	return STATUS_SUCCESS;
 }

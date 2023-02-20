@@ -26,10 +26,11 @@ static ULONG CrosEcBusDebugCatagories = DBG_INIT || DBG_PNP || DBG_IOCTL;
 
 int ec_max_outsize, ec_max_insize;
 
+lpc_driver_ops ec_lpc_ops = {0};
+
 int (*ec_command_proto)(int command, int version,
 	const void* outdata, int outsize,
 	void* indata, int insize);
-
 int (*ec_readmem)(int offset, int bytes, void* dest);
 
 /*
@@ -157,7 +158,7 @@ static int ec_command_lpc(int command, int version,
 	return args.data_size;
 }
 
-static UINT8 ec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest) {
+UINT8 ec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* dest) {
 	int sum = 0;
 	int i;
 	for (i = 0; i < length; ++i) {
@@ -169,7 +170,7 @@ static UINT8 ec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8* 
 	return sum;
 }
 
-static UINT8 ec_lpc_write_bytes(unsigned int offset, unsigned int length, UINT8* msg) {
+UINT8 ec_lpc_write_bytes(unsigned int offset, unsigned int length, UINT8* msg) {
 	int sum = 0;
 	int i;
 	for (i = 0; i < length; ++i) {
@@ -206,7 +207,7 @@ static int ec_command_lpc_3(int command, int version,
 	rq.data_len = outsize;
 
 	/* Copy data and update checksum */
-	ec_lpc_write_bytes(EC_LPC_ADDR_HOST_PACKET + sizeof(rq), outsize, outdata);
+	ec_lpc_ops.write(EC_LPC_ADDR_HOST_PACKET + sizeof(rq), outsize, outdata);
 	for (i = 0, d = (const UINT8*)outdata; i < outsize; i++, d++) {
 		csum += *d;
 	}
@@ -219,7 +220,7 @@ static int ec_command_lpc_3(int command, int version,
 	rq.checksum = (UINT8)(-csum);
 
 	/* Copy header */
-	ec_lpc_write_bytes(EC_LPC_ADDR_HOST_PACKET, sizeof(rq), &rq);
+	ec_lpc_ops.write(EC_LPC_ADDR_HOST_PACKET, sizeof(rq), &rq);
 
 	/* Start the command */
 	outb(EC_COMMAND_PROTOCOL_3, EC_LPC_ADDR_HOST_CMD);
@@ -239,7 +240,7 @@ static int ec_command_lpc_3(int command, int version,
 	}
 
 	/* Read back response header and start checksum */
-	ec_lpc_read_bytes(EC_LPC_ADDR_HOST_PACKET, sizeof(rs), &rs);
+	ec_lpc_ops.read(EC_LPC_ADDR_HOST_PACKET, sizeof(rs), &rs);
 	csum = 0;
 	for (i = 0, dout = (UINT8*)&rs; i < sizeof(rs); i++, dout++) {
 		csum += *dout;
@@ -264,7 +265,7 @@ static int ec_command_lpc_3(int command, int version,
 	}
 
 	/* Read back data and update checksum */
-	ec_lpc_read_bytes(EC_LPC_ADDR_HOST_PACKET + sizeof(rs), rs.data_len, indata);
+	ec_lpc_ops.read(EC_LPC_ADDR_HOST_PACKET + sizeof(rs), rs.data_len, indata);
 	for (i = 0, dout = (UINT8*)indata; i < rs.data_len; i++, dout++) {
 		csum += *dout;
 	}
@@ -290,12 +291,12 @@ static int ec_readmem_lpc(int offset, int bytes, void* dest)
 		return -1;
 
 	if (bytes) {				/* fixed length */
-		ec_lpc_read_bytes(EC_LPC_ADDR_MEMMAP + i, bytes, dest);
+		ec_lpc_ops.read(EC_LPC_ADDR_MEMMAP + i, bytes, dest);
 		cnt = bytes;
 	}
 	else {				/* string */
 		for (; i < EC_MEMMAP_SIZE; i++, s++) {
-			ec_lpc_read_bytes(EC_LPC_ADDR_MEMMAP + i, 1, s);
+			ec_lpc_ops.read(EC_LPC_ADDR_MEMMAP + i, 1, s);
 			cnt++;
 			if (!*s)
 				break;
@@ -329,14 +330,26 @@ NTSTATUS comm_init_lpc(void)
 		return STATUS_CONNECTION_INVALID;
 	}
 
+	/* All EC's supports reading mapped memory directly. */
+	ec_readmem = ec_readmem_lpc;
+
+	char signature[2];
+
 	/* Check for a MEC first. */
-	if (comm_init_lpc_mec && comm_init_lpc_mec() >= 0) {
-		ec_max_outsize = EC_LPC_HOST_PACKET_SIZE -
-			sizeof(struct ec_host_request);
-		ec_max_insize = EC_LPC_HOST_PACKET_SIZE -
-			sizeof(struct ec_host_response);
-		DbgPrint("MEC EC\n");
-		return STATUS_SUCCESS;
+	if (comm_init_lpc_mec && NT_SUCCESS(comm_init_lpc_mec())) {
+		ec_lpc_ops.read(EC_LPC_ADDR_MEMMAP + EC_MEMMAP_ID, 2, signature);
+		if (signature[0] == 'E' && signature[1] == 'C') {
+			ec_max_outsize = EC_LPC_HOST_PACKET_SIZE -
+				sizeof(struct ec_host_request);
+			ec_max_insize = EC_LPC_HOST_PACKET_SIZE -
+				sizeof(struct ec_host_response);
+
+			//All MEC EC's are Protocol V3
+			ec_command_proto = ec_command_lpc_3;
+
+			DbgPrint("MEC EC\n");
+			return STATUS_SUCCESS;
+		}
 	}
 
 	/*
@@ -347,8 +360,11 @@ NTSTATUS comm_init_lpc(void)
 	 * seeing whether the EC sets the EC_HOST_ARGS_FLAG_FROM_HOST flag
 	 * in args when it responds.
 	 */
-	if (inb(EC_LPC_ADDR_MEMMAP + EC_MEMMAP_ID) != 'E' ||
-		inb(EC_LPC_ADDR_MEMMAP + EC_MEMMAP_ID + 1) != 'C') {
+
+	ec_lpc_ops.read = ec_lpc_read_bytes;
+	ec_lpc_ops.write = ec_lpc_write_bytes;
+	ec_lpc_ops.read(EC_LPC_ADDR_MEMMAP + EC_MEMMAP_ID, 2, signature);
+	if (signature[0] != 'E' || signature[1] != 'C') {
 		CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_INIT,
 			"Missing Chromium EC memory map.\n");
 		return STATUS_NO_MEMORY;
@@ -380,8 +396,5 @@ NTSTATUS comm_init_lpc(void)
 			"EC doesn't support protocols we need.\n");
 		return STATUS_INVALID_DEVICE_STATE;
 	}
-
-	/* Either one supports reading mapped memory directly. */
-	ec_readmem = ec_readmem_lpc;
 	return STATUS_SUCCESS;
 }
