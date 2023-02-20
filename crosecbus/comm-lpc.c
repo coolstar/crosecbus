@@ -290,12 +290,12 @@ static int ec_readmem_lpc(int offset, int bytes, void* dest)
 		return -1;
 
 	if (bytes) {				/* fixed length */
-		for (; cnt < bytes; i++, s++, cnt++)
-			*s = inb(EC_LPC_ADDR_MEMMAP + i);
+		ec_lpc_read_bytes(EC_LPC_ADDR_MEMMAP + i, bytes, dest);
+		cnt = bytes;
 	}
 	else {				/* string */
 		for (; i < EC_MEMMAP_SIZE; i++, s++) {
-			*s = inb(EC_LPC_ADDR_MEMMAP + i);
+			ec_lpc_read_bytes(EC_LPC_ADDR_MEMMAP + i, 1, s);
 			cnt++;
 			if (!*s)
 				break;
