@@ -41,6 +41,7 @@ typedef struct _CROSEC_COMMAND {
     UINT32 OutSize;
     UINT32 InSize;
     UINT32 Result;
+#pragma warning(disable:4200)
     UINT8 Data[];
 } CROSEC_COMMAND, *PCROSEC_COMMAND;
 

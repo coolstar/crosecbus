@@ -127,7 +127,7 @@ NTSTATUS CrosECIoctlXCmd(_In_ PCROSECBUS_CONTEXT pDevice, _In_ WDFREQUEST Reques
 
 	RtlCopyMemory(outCmd, cmd, sizeof(*cmd)); //Copy header
 
-	int res = ec_command_proto(cmd->Command, cmd->Version, outCmd->Data, cmd->OutSize,
+	int res = ec_command_proto((UINT16)cmd->Command, (UINT8)cmd->Version, outCmd->Data, cmd->OutSize,
 		cmd->Data, cmd->InSize);
 
 	WdfWaitLockRelease(pDevice->EcLock);

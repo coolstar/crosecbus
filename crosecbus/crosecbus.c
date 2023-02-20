@@ -1,6 +1,8 @@
 #define DESCRIPTOR_DEF
 #include "driver.h"
-#include "stdint.h"
+#pragma warning(disable:4005)
+#pragma warning(disable:4083)
+#include <stdint.h>
 #include "comm-host.h"
 #include "userspaceQueue.h"
 
@@ -77,7 +79,7 @@ static NTSTATUS CrosEcCmdXferStatus(
 		InterlockedIncrement64(&pDevice->KernelAccessesWaiting);
 		WdfWaitLockAcquire(pDevice->EcLock, NULL);
 
-		int cmdstatus = ec_command_proto(Msg->Command, Msg->Version, Msg->Data, Msg->OutSize, Msg->Data, Msg->InSize);
+		int cmdstatus = ec_command_proto((UINT16)Msg->Command, (UINT8)Msg->Version, Msg->Data, Msg->OutSize, Msg->Data, Msg->InSize);
 
 		InterlockedDecrement64(&pDevice->KernelAccessesWaiting);
 		WdfWaitLockRelease(pDevice->EcLock);
@@ -112,6 +114,7 @@ static INT CrosEcReadMem(
 	OUT PVOID dest
 )
 {
+	UNREFERENCED_PARAMETER(pDevice);
 	return ec_readmem(offset, bytes, dest);
 }
 
@@ -191,8 +194,8 @@ Status
 	}
 	else {
 		DbgPrint("Warning: Couldn't get device features\n");
-		pDevice->EcFeatures[0] = -1;
-		pDevice->EcFeatures[1] = -1;
+		pDevice->EcFeatures[0] = (UINT32)-1;
+		pDevice->EcFeatures[1] = (UINT32)-1;
 	}
 
 	status = WdfFdoQueryForInterface(FxDevice,
@@ -342,8 +345,8 @@ static NTSTATUS send_ec_command(
 	}
 	msg->Version = version;
 	msg->Command = cmd;
-	msg->OutSize = outSize;
-	msg->InSize = inSize;
+	msg->OutSize = (UINT32)outSize;
+	msg->InSize = (UINT32)inSize;
 
 	if (outSize)
 		memcpy(msg->Data, out, outSize);

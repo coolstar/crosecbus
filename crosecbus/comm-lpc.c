@@ -203,7 +203,7 @@ static int ec_command_lpc_3(UINT16 command, UINT8 version,
 	rq.command = command;
 	rq.command_version = version;
 	rq.reserved = 0;
-	rq.data_len = outsize;
+	rq.data_len = (UINT16)outsize;
 
 	/* Copy data and update checksum */
 	ec_lpc_ops.write(EC_LPC_ADDR_HOST_PACKET + sizeof(rq), outsize, outdata);

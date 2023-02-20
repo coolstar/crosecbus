@@ -56,11 +56,11 @@ enum cros_ec_lpc_mec_emi_access_mode {
 UINT16 mec_emi_base = 0, mec_emi_end = 0;
 
 static void ec_mec_emi_write_access(UINT16 address, enum cros_ec_lpc_mec_emi_access_mode access_type) {
-	outw((address & 0xFFFC) | access_type, MEC_EMI_EC_ADDRESS_B0(mec_emi_base));
+	outw((address & 0xFFFC) | (UINT16)access_type, MEC_EMI_EC_ADDRESS_B0(mec_emi_base));
 }
 
 static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
-	char* data, UINT16 size)
+	UINT8* data, UINT16 size)
 {
 	if (mec_emi_base == 0 || mec_emi_end == 0)
 		return 0;
@@ -77,7 +77,7 @@ static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 		ec_mec_emi_write_access(address, MEC_EC_BYTE_ACCESS);
 		/* Unaligned start address */
 		for (int i = address % 4; i < 4; ++i) {
-			char* storage = &data[pos++];
+			UINT8* storage = &data[pos++];
 			if (direction == EC_MEC_WRITE)
 				outb(*storage, MEC_EMI_EC_DATA_B0(mec_emi_base) + i);
 			else if (direction == EC_MEC_READ)
@@ -108,7 +108,7 @@ static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 	if (size - pos > 0) {
 		ec_mec_emi_write_access(address, MEC_EC_BYTE_ACCESS);
 		for (int i = 0; i < (size - pos); ++i) {
-			char* storage = &data[pos + i];
+			UINT8* storage = &data[pos + i];
 			if (direction == EC_MEC_WRITE)
 				outb(*storage, MEC_EMI_EC_DATA_B0(mec_emi_base) + i);
 			else if (direction == EC_MEC_READ)
@@ -151,7 +151,7 @@ static int ec_mec_lpc_read_bytes(unsigned int offset, unsigned int length, UINT8
 
 	int sum = 0;
 	unsigned int i;
-	ec_mec_xfer(EC_MEC_READ, offset - EC_HOST_CMD_REGION0, dest, length);
+	ec_mec_xfer(EC_MEC_READ, (UINT16)offset - EC_HOST_CMD_REGION0, dest, (UINT16)length);
 	for (i = 0; i < length; ++i) {
 		sum += dest[i];
 	}
@@ -168,7 +168,7 @@ static int ec_mec_lpc_write_bytes(unsigned int offset, unsigned int length, cons
 
 	int sum = 0;
 	unsigned int i;
-	ec_mec_xfer(EC_MEC_WRITE, offset - EC_HOST_CMD_REGION0, msg, length);
+	ec_mec_xfer(EC_MEC_WRITE, (UINT16)offset - EC_HOST_CMD_REGION0, (UINT8 *)msg, (UINT16)length);
 	for (i = 0; i < length; ++i) {
 		sum += msg[i];
 	}
