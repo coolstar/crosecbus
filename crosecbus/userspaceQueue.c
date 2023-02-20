@@ -108,6 +108,21 @@ NTSTATUS CrosECIoctlXCmd(_In_ WDFDEVICE Device, _In_ PCROSECBUS_CONTEXT pDevice,
 		cmd->Command == EC_CMD_FLASH_WRITE ||
 		cmd->Command == EC_CMD_USB_PD_FW_UPDATE);
 
+	int tries = 5; //Wait our turn if kernel driver wants to access first
+	while (tries > 0) {
+		LONG accesses = InterlockedCompareExchange64(&pDevice->KernelAccessesWaiting, 0, 0);
+		if (accesses == 0) //No kernel driver access. We're good to go.
+			break;
+
+		LARGE_INTEGER Interval;
+		Interval.QuadPart = -10 * 500; //Wait 500 microseconds before checking again to hopefully let kernel complete
+		KeDelayExecutionThread(KernelMode, TRUE, &Interval);
+		tries--;
+	}
+	if (tries <= 0) {
+		return STATUS_RETRY; //Userland should retry later.
+	}
+
 	WdfWaitLockAcquire(pDevice->EcLock, NULL);
 
 	RtlCopyMemory(outCmd, cmd, sizeof(*cmd)); //Copy header

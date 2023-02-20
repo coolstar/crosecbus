@@ -74,10 +74,12 @@ static NTSTATUS CrosEcCmdXferStatus(
 			return STATUS_INVALID_PARAMETER_3;
 		}
 
+		InterlockedIncrement64(&pDevice->KernelAccessesWaiting);
 		WdfWaitLockAcquire(pDevice->EcLock, NULL);
 
 		int cmdstatus = ec_command_proto(Msg->Command, Msg->Version, Msg->Data, Msg->OutSize, Msg->Data, Msg->InSize);
 
+		InterlockedDecrement64(&pDevice->KernelAccessesWaiting);
 		WdfWaitLockRelease(pDevice->EcLock, NULL);
 
 		if (cmdstatus >= 0) {
@@ -557,6 +559,7 @@ IN PWDFDEVICE_INIT DeviceInit
 		}
 	}
 
+	devContext->KernelAccessesWaiting = 0;
 	devContext->FxDevice = device;
 
 	return status;
