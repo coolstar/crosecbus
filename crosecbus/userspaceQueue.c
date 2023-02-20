@@ -166,7 +166,7 @@ NTSTATUS CrosECIoctlReadMem(_In_ WDFDEVICE Device, _In_ PCROSECBUS_CONTEXT pDevi
 
 	NT_RETURN_IF(STATUS_INVALID_ADDRESS, (rq->offset + rq->bytes) > CROSEC_MEMMAP_SIZE);
 
-	int res = ec_readmem(rq->offset, rs->buffer, rq->bytes);
+	int res = ec_readmem(rq->offset, rq->bytes, rs->buffer);
 
 	CrosEcBusPrint(DEBUG_LEVEL_INFO, DBG_IOCTL, "%!FUNC! Request 0x%p Offset 0x%x Buffer %d Result %d",
 		Request, rq->offset, rq->bytes, res);
