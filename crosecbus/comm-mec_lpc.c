@@ -21,14 +21,27 @@ static __inline unsigned short inw(unsigned int __port) {
 static ULONG CrosEcBusDebugLevel = 100;
 static ULONG CrosEcBusDebugCatagories = DBG_INIT || DBG_PNP || DBG_IOCTL;
 
+FAST_MUTEX MecAccessMutex;
+
 int wait_for_ec(int status_addr, int timeout_usec);
 
 // Thanks @DHowett!
 
 typedef enum _ec_xfer_direction { EC_MEC_WRITE, EC_MEC_READ } ec_xfer_direction;
 
-#define MEC_EC_BYTE_ACCESS               0x00
-#define MEC_EC_LONG_ACCESS_AUTOINCREMENT 0x03
+enum cros_ec_lpc_mec_emi_access_mode {
+	/* 8-bit access */
+	MEC_EC_BYTE_ACCESS = 0x0,
+	/* 16-bit access */
+	MEC_EC_WORD_ACCESS = 0x1,
+	/* 32-bit access */
+	MEC_EC_LONG_ACCESS = 0x2,
+	/*
+	 * 32-bit access, read or write of MEC_EMI_EC_DATA_B3 causes the
+	 * EC data register to be incremented.
+	 */
+	 MEC_EC_LONG_ACCESS_AUTOINCREMENT = 0x3,
+};
 
 /* EMI registers are relative to base */
 #define MEC_EMI_HOST_TO_EC(MEC_EMI_BASE)	((MEC_EMI_BASE) + 0)
@@ -40,11 +53,19 @@ typedef enum _ec_xfer_direction { EC_MEC_WRITE, EC_MEC_READ } ec_xfer_direction;
 #define MEC_EMI_EC_DATA_B2(MEC_EMI_BASE)	((MEC_EMI_BASE) + 6)
 #define MEC_EMI_EC_DATA_B3(MEC_EMI_BASE)	((MEC_EMI_BASE) + 7)
 
+UINT16 mec_emi_base = 0, mec_emi_end = 0;
+
+static void ec_mec_emi_write_access(UINT16 address, enum cros_ec_lpc_mec_emi_access_mode access_type) {
+	outw((address & 0xFFFC) | access_type, MEC_EMI_EC_ADDRESS_B0(mec_emi_base));
+}
+
 static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 	char* data, UINT16 size)
 {
 	if (mec_emi_base == 0 || mec_emi_end == 0)
 		return 0;
+
+	ExAcquireFastMutex(&MecAccessMutex);
 
 	/*
 	 * There's a cleverer way to do this, but it's somewhat less clear what's happening.
@@ -53,7 +74,7 @@ static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 	int pos = 0;
 	UINT16 temp[2];
 	if (address % 4 > 0) {
-		outw((address & 0xFFFC) | MEC_EC_BYTE_ACCESS, MEC_EMI_EC_ADDRESS_B0(mec_emi_base));
+		ec_mec_emi_write_access(address, MEC_EC_BYTE_ACCESS);
 		/* Unaligned start address */
 		for (int i = address % 4; i < 4; ++i) {
 			char* storage = &data[pos++];
@@ -66,7 +87,7 @@ static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 	}
 
 	if (size - pos >= 4) {
-		outw((address & 0xFFFC) | MEC_EC_LONG_ACCESS_AUTOINCREMENT, MEC_EMI_EC_ADDRESS_B0(mec_emi_base));
+		ec_mec_emi_write_access(address, MEC_EC_LONG_ACCESS_AUTOINCREMENT);
 		while (size - pos >= 4) {
 			if (direction == EC_MEC_WRITE) {
 				memcpy(temp, &data[pos], sizeof(temp));
@@ -85,7 +106,7 @@ static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 	}
 
 	if (size - pos > 0) {
-		outw((address & 0xFFFC) | MEC_EC_BYTE_ACCESS, MEC_EMI_EC_ADDRESS_B0(mec_emi_base));
+		ec_mec_emi_write_access(address, MEC_EC_BYTE_ACCESS);
 		for (int i = 0; i < (size - pos); ++i) {
 			char* storage = &data[pos + i];
 			if (direction == EC_MEC_WRITE)
@@ -94,10 +115,12 @@ static int ec_mec_xfer(ec_xfer_direction direction, UINT16 address,
 				*storage = inb(MEC_EMI_EC_DATA_B0(mec_emi_base) + i);
 		}
 	}
+
+	ExReleaseFastMutex(&MecAccessMutex);
+
 	return 0;
 }
 
-UINT16 mec_emi_base = 0, mec_emi_end = 0;
 static int cros_ec_lpc_mec_in_range(unsigned int offset, unsigned int length) {
 	if (length == 0)
 		return -1;
@@ -158,6 +181,8 @@ NTSTATUS comm_init_lpc_mec(void)
 {
 	/* This function assumes some setup was done by comm_init_lpc. */
 	
+	ExInitializeFastMutex(&MecAccessMutex);
+
 	mec_emi_base = EC_HOST_CMD_REGION0;
 	mec_emi_end = EC_LPC_ADDR_MEMMAP + EC_MEMMAP_SIZE;
 
