@@ -150,6 +150,9 @@ Status
 	UNREFERENCED_PARAMETER(FxResourcesRaw);
 	UNREFERENCED_PARAMETER(FxResourcesTranslated);
 
+	//Assume we have sync GPIO for now
+	pDevice->FoundSyncGPIO = TRUE;
+
 	status = WdfWaitLockCreate(
 		WDF_NO_OBJECT_ATTRIBUTES,
 		&pDevice->EcLock);
@@ -198,18 +201,16 @@ Status
 		pDevice->EcFeatures[1] = (UINT32)-1;
 	}
 
-	status = WdfFdoQueryForInterface(FxDevice,
+	pDevice->hostSleepV1 = FALSE;
+
+	NTSTATUS acpiNotifyStatus = WdfFdoQueryForInterface(FxDevice,
 		&GUID_ACPI_INTERFACE_STANDARD2,
 		(PINTERFACE)&pDevice->S0ixNotifyAcpiInterface,
 		sizeof(ACPI_INTERFACE_STANDARD2),
 		1,
 		NULL);
 
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	{
+	if (NT_SUCCESS(acpiNotifyStatus)) {
 		struct ec_params_get_cmd_versions_v1 req_v1 = { 0 };
 		struct ec_response_get_cmd_versions resp = { 0 };
 		req_v1.cmd = EC_CMD_HOST_SLEEP_EVENT;
@@ -217,16 +218,48 @@ Status
 		if (rv >= 0) {
 			pDevice->hostSleepV1 = (resp.version_mask & EC_VER_MASK(1)) != 0;
 		}
-		else {
-			pDevice->hostSleepV1 = FALSE;
+
+		acpiNotifyStatus = pDevice->S0ixNotifyAcpiInterface.RegisterForDeviceNotifications(
+			pDevice->S0ixNotifyAcpiInterface.Context,
+			(PDEVICE_NOTIFY_CALLBACK2)CrosEcBusS0ixNotifyCallback,
+			pDevice);
+		if (!NT_SUCCESS(acpiNotifyStatus)) {
+			DbgPrint("Warning: Failed to register notifications on ACPI device\n");
 		}
 	}
+	else {
+		DbgPrint("Warning: Failed to get ACPI device\n");
+	}
 
-	status = pDevice->S0ixNotifyAcpiInterface.RegisterForDeviceNotifications(
-		pDevice->S0ixNotifyAcpiInterface.Context,
-		(PDEVICE_NOTIFY_CALLBACK2)CrosEcBusS0ixNotifyCallback,
-		pDevice);
+	return status;
+}
+
+NTSTATUS
+OnSelfManagedIoInit(
+	_In_
+	WDFDEVICE FxDevice
+) {
+	PCROSECBUS_CONTEXT pDevice;
+	pDevice = GetDeviceContext(FxDevice);
+
+	NTSTATUS status = STATUS_SUCCESS;
+
+	// CS Keyboard Callback
+
+	UNICODE_STRING CSKeyboardSettingsCallbackAPI;
+	RtlInitUnicodeString(&CSKeyboardSettingsCallbackAPI, L"\\CallBack\\CsKeyboardSettingsCallbackAPI");
+
+
+	OBJECT_ATTRIBUTES attributes;
+	InitializeObjectAttributes(&attributes,
+		&CSKeyboardSettingsCallbackAPI,
+		OBJ_KERNEL_HANDLE | OBJ_OPENIF | OBJ_CASE_INSENSITIVE | OBJ_PERMANENT,
+		NULL,
+		NULL
+	);
+	status = ExCreateCallback(&pDevice->CSButtonsCallback, &attributes, TRUE, TRUE);
 	if (!NT_SUCCESS(status)) {
+
 		return status;
 	}
 
@@ -268,6 +301,11 @@ Status
 		WdfObjectDelete(pDevice->EcLock);
 	}
 
+	if (pDevice->CSButtonsCallback) {
+		ObfDereferenceObject(pDevice->CSButtonsCallback);
+		pDevice->CSButtonsCallback = NULL;
+	}
+
 	return status;
 }
 
@@ -293,9 +331,15 @@ Status
 
 --*/
 {
-	UNREFERENCED_PARAMETER(FxDevice);
 	UNREFERENCED_PARAMETER(FxPreviousState);
 	NTSTATUS status = STATUS_SUCCESS;
+
+	PCROSECBUS_CONTEXT pDevice = GetDeviceContext(FxDevice);
+	if (pDevice->FoundSyncGPIO) {
+		WdfTimerStart(pDevice->SyncGpioTimer, WDF_REL_TIMEOUT_IN_MS(10));
+	}
+
+	DbgPrint("D0 Entry\n");
 
 	return status;
 }
@@ -322,10 +366,15 @@ Status
 
 --*/
 {
-	UNREFERENCED_PARAMETER(FxDevice);
 	UNREFERENCED_PARAMETER(FxTargetState);
 
 	NTSTATUS status = STATUS_SUCCESS;
+	PCROSECBUS_CONTEXT pDevice = GetDeviceContext(FxDevice);
+
+	if (pDevice->FoundSyncGPIO) {
+		WdfTimerStop(pDevice->SyncGpioTimer, TRUE);
+		WdfWorkItemFlush(pDevice->SyncGpioWorkItem);
+	}
 
 	return status;
 }
@@ -384,6 +433,69 @@ NTSTATUS CrosEcBusSleepEvent(
 }
 
 VOID
+CrosEcBusSyncWorkItem(
+	IN WDFWORKITEM  WorkItem
+)
+{
+	WDFDEVICE Device = (WDFDEVICE)WdfWorkItemGetParentObject(WorkItem);
+	PCROSECBUS_CONTEXT pDevice = GetDeviceContext(Device);
+
+	if (InterlockedExchange(&pDevice->SyncGpioWorkItemActive, 1) == 1) {
+		return;
+	}
+
+	const uint32_t mkbp_mask =
+		EC_HOST_EVENT_MASK(EC_HOST_EVENT_MKBP);
+	struct ec_response_host_event_mask r;
+
+	NTSTATUS status = send_ec_command(pDevice, EC_CMD_HOST_EVENT_GET_B, 0, NULL, 0, (UINT8*)&r, sizeof(r));
+	if (!NT_SUCCESS(status)) {
+		goto out;
+	}
+
+	if (r.mask & EC_HOST_EVENT_MASK(EC_HOST_EVENT_INVALID)) {
+		goto out;
+	}
+
+	if (r.mask & mkbp_mask) {
+		struct ec_params_host_event_mask p;
+		p.mask = mkbp_mask;
+
+		status = send_ec_command(pDevice, EC_CMD_HOST_EVENT_CLEAR_B, 0, (UINT8 *)&p, sizeof(p), NULL, 0);
+		if (!NT_SUCCESS(status)) {
+			goto out;
+		}
+
+		struct ec_response_get_next_event event = { 0 };
+		status = send_ec_command(pDevice, EC_CMD_GET_NEXT_EVENT, 0, NULL, 0, (UINT8 *)&event, sizeof(event));
+		if (!NT_SUCCESS(status)) {
+			goto out;
+		}
+
+		if (event.event_type == EC_MKBP_EVENT_BUTTON) {
+			if (pDevice->CSButtonsCallback) {
+				CSVivaldiSettingsArg newArg;
+				RtlZeroMemory(&newArg, sizeof(CSVivaldiSettingsArg));
+				newArg.argSz = sizeof(CSVivaldiSettingsArg);
+				newArg.settingsRequest = CSVivaldiRequestUpdateButton;
+				newArg.args.button.button = (UINT8)event.data.buttons;
+				ExNotifyCallback(pDevice->CSButtonsCallback, &newArg, NULL);
+			}
+		}
+	}
+out:
+	InterlockedExchange(&pDevice->SyncGpioWorkItemActive, 0);
+	return;
+}
+
+void CrosEcBusSyncTimer(_In_ WDFTIMER hTimer) {
+	WDFDEVICE Device = (WDFDEVICE)WdfTimerGetParentObject(hTimer);
+	PCROSECBUS_CONTEXT pDevice = GetDeviceContext(Device);
+
+	WdfWorkItemEnqueue(pDevice->SyncGpioWorkItem);
+}
+
+VOID
 CrosEcBusS0ixNotifyCallback(
 	PCROSECBUS_CONTEXT pDevice,
 	ULONG NotifyCode) {
@@ -396,9 +508,6 @@ CrosEcBusS0ixNotifyCallback(
 		if (NT_SUCCESS(CrosEcBusSleepEvent(pDevice, HOST_SLEEP_EVENT_S0IX_SUSPEND))) {
 			pDevice->isInS0ix = TRUE;
 		}
-	}
-	else {
-		DbgPrint("Got MKBP?\n");
 	}
 }
 
@@ -427,6 +536,7 @@ IN PWDFDEVICE_INIT DeviceInit
 
 		pnpCallbacks.EvtDevicePrepareHardware = OnPrepareHardware;
 		pnpCallbacks.EvtDeviceReleaseHardware = OnReleaseHardware;
+		pnpCallbacks.EvtDeviceSelfManagedIoInit = OnSelfManagedIoInit;
 		pnpCallbacks.EvtDeviceD0Entry = OnD0Entry;
 		pnpCallbacks.EvtDeviceD0Exit = OnD0Exit;
 
@@ -497,6 +607,33 @@ IN PWDFDEVICE_INIT DeviceInit
 			"WdfDeviceCreateSymbolicLink failed 0x%x\n", status);
 		return status;
 	}
+
+	WDF_TIMER_CONFIG              timerConfig;
+	WDFTIMER                      hTimer;
+
+	WDF_TIMER_CONFIG_INIT_PERIODIC(&timerConfig, CrosEcBusSyncTimer, 10);
+	timerConfig.TolerableDelay = TolerableDelayUnlimited; //Don't wake from S0ix
+
+	WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
+	attributes.ParentObject = device;
+	status = WdfTimerCreate(&timerConfig, &attributes, &hTimer);
+	devContext->SyncGpioTimer = hTimer;
+	if (!NT_SUCCESS(status))
+	{
+		CrosEcBusPrint(DEBUG_LEVEL_ERROR, DBG_PNP, "(%!FUNC!) WdfTimerCreate failed status:%!STATUS!\n", status);
+		return status;
+	}
+
+	WDF_WORKITEM_CONFIG workitemConfig;
+
+	WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
+	WDF_OBJECT_ATTRIBUTES_SET_CONTEXT_TYPE(&attributes, CROSECBUS_CONTEXT);
+	attributes.ParentObject = device;
+	WDF_WORKITEM_CONFIG_INIT(&workitemConfig, CrosEcBusSyncWorkItem);
+
+	WdfWorkItemCreate(&workitemConfig,
+		&attributes,
+		&devContext->SyncGpioWorkItem);
 
 	{ // V1
 		CROSEC_INTERFACE_STANDARD CrosEcInterface;

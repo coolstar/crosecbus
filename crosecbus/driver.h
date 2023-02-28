@@ -74,6 +74,20 @@ DEFINE_GUID(GUID_CROSEC_INTERFACE_STANDARD,
 DEFINE_GUID(GUID_CROSEC_INTERFACE_STANDARD_V2,
     0xad8649fa, 0x7c71, 0x11ed, 0xb6, 0x3c, 0x00, 0x15, 0x5d, 0xa4, 0x49, 0xad);
 
+typedef enum {
+    CSVivaldiRequestUpdateButton = 0x101
+} CSVivaldiRequest;
+
+typedef struct CSVivaldiSettingsArg {
+    UINT32 argSz;
+    CSVivaldiRequest settingsRequest;
+    union args {
+        struct {
+            UINT8 button;
+        } button;
+    } args;
+} CSVivaldiSettingsArg, * PCSVivaldiSettingsArg;
+
 //
 // Interface for getting and setting power level etc.,
 //
@@ -103,6 +117,12 @@ typedef struct _CROSECBUS_CONTEXT
 
     LONG64 KernelAccessesWaiting;
     WDFWAITLOCK EcLock;
+
+    BOOLEAN FoundSyncGPIO;
+    LONG SyncGpioWorkItemActive;
+    WDFTIMER SyncGpioTimer;
+    WDFWORKITEM SyncGpioWorkItem;
+    PCALLBACK_OBJECT CSButtonsCallback;
 
     //S0IX Notify
     ACPI_INTERFACE_STANDARD2 S0ixNotifyAcpiInterface;
