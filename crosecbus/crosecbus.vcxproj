@@ -151,6 +151,7 @@
     <ClInclude Include="crosecbus.h" />
     <ClInclude Include="ec_commands.h" />
     <ClInclude Include="gpiowrapper.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="trace.h" />
     <ClInclude Include="userspaceQueue.h" />
   </ItemGroup>
@@ -160,6 +161,9 @@
     <ClCompile Include="crosecbus.c" />
     <ClCompile Include="gpio.c" />
     <ClCompile Include="userspaceQueue.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="crosecbus.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
