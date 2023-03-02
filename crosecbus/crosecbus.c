@@ -309,76 +309,6 @@ Status
 	return status;
 }
 
-NTSTATUS
-OnD0Entry(
-_In_  WDFDEVICE               FxDevice,
-_In_  WDF_POWER_DEVICE_STATE  FxPreviousState
-)
-/*++
-
-Routine Description:
-
-This routine allocates objects needed by the driver.
-
-Arguments:
-
-FxDevice - a handle to the framework device object
-FxPreviousState - previous power state
-
-Return Value:
-
-Status
-
---*/
-{
-	UNREFERENCED_PARAMETER(FxPreviousState);
-	NTSTATUS status = STATUS_SUCCESS;
-
-	PCROSECBUS_CONTEXT pDevice = GetDeviceContext(FxDevice);
-	if (pDevice->FoundSyncGPIO) {
-		WdfTimerStart(pDevice->SyncGpioTimer, WDF_REL_TIMEOUT_IN_MS(100));
-	}
-
-	DbgPrint("D0 Entry\n");
-
-	return status;
-}
-
-NTSTATUS
-OnD0Exit(
-_In_  WDFDEVICE               FxDevice,
-_In_  WDF_POWER_DEVICE_STATE  FxTargetState
-)
-/*++
-
-Routine Description:
-
-This routine destroys objects needed by the driver.
-
-Arguments:
-
-FxDevice - a handle to the framework device object
-FxTargetState - target power state
-
-Return Value:
-
-Status
-
---*/
-{
-	UNREFERENCED_PARAMETER(FxTargetState);
-
-	NTSTATUS status = STATUS_SUCCESS;
-	PCROSECBUS_CONTEXT pDevice = GetDeviceContext(FxDevice);
-
-	if (pDevice->FoundSyncGPIO) {
-		WdfTimerStop(pDevice->SyncGpioTimer, TRUE);
-		WdfWorkItemFlush(pDevice->SyncGpioWorkItem);
-	}
-
-	return status;
-}
-
 static NTSTATUS send_ec_command(
 	_In_ PCROSECBUS_CONTEXT pDevice,
 	UINT32 cmd,
@@ -411,6 +341,85 @@ static NTSTATUS send_ec_command(
 
 exit:
 	ExFreePoolWithTag(msg, CROSECBUS_POOL_TAG);
+	return status;
+}
+
+NTSTATUS
+OnD0Entry(
+	_In_  WDFDEVICE               FxDevice,
+	_In_  WDF_POWER_DEVICE_STATE  FxPreviousState
+)
+/*++
+
+Routine Description:
+
+This routine allocates objects needed by the driver.
+
+Arguments:
+
+FxDevice - a handle to the framework device object
+FxPreviousState - previous power state
+
+Return Value:
+
+Status
+
+--*/
+{
+	UNREFERENCED_PARAMETER(FxPreviousState);
+	NTSTATUS status = STATUS_SUCCESS;
+
+	PCROSECBUS_CONTEXT pDevice = GetDeviceContext(FxDevice);
+
+	struct ec_params_motion_sense params = { 0 };
+	struct ec_response_motion_sense resp;
+
+	params.cmd = MOTIONSENSE_CMD_FIFO_INT_ENABLE;
+	params.fifo_int_enable.enable = 0;
+
+	send_ec_command(pDevice, EC_CMD_MOTION_SENSE_CMD, 1, (UINT8*)&params, sizeof(params), (UINT8*)&resp, sizeof(resp)); //Ignore response as device may not have sensors
+
+	if (pDevice->FoundSyncGPIO) {
+		WdfTimerStart(pDevice->SyncGpioTimer, WDF_REL_TIMEOUT_IN_MS(100));
+	}
+
+	DbgPrint("D0 Entry\n");
+
+	return status;
+}
+
+NTSTATUS
+OnD0Exit(
+	_In_  WDFDEVICE               FxDevice,
+	_In_  WDF_POWER_DEVICE_STATE  FxTargetState
+)
+/*++
+
+Routine Description:
+
+This routine destroys objects needed by the driver.
+
+Arguments:
+
+FxDevice - a handle to the framework device object
+FxTargetState - target power state
+
+Return Value:
+
+Status
+
+--*/
+{
+	UNREFERENCED_PARAMETER(FxTargetState);
+
+	NTSTATUS status = STATUS_SUCCESS;
+	PCROSECBUS_CONTEXT pDevice = GetDeviceContext(FxDevice);
+
+	if (pDevice->FoundSyncGPIO) {
+		WdfTimerStop(pDevice->SyncGpioTimer, TRUE);
+		WdfWorkItemFlush(pDevice->SyncGpioWorkItem);
+	}
+
 	return status;
 }
 
