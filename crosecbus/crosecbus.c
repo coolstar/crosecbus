@@ -336,7 +336,7 @@ Status
 
 	PCROSECBUS_CONTEXT pDevice = GetDeviceContext(FxDevice);
 	if (pDevice->FoundSyncGPIO) {
-		WdfTimerStart(pDevice->SyncGpioTimer, WDF_REL_TIMEOUT_IN_MS(10));
+		WdfTimerStart(pDevice->SyncGpioTimer, WDF_REL_TIMEOUT_IN_MS(100));
 	}
 
 	DbgPrint("D0 Entry\n");
@@ -611,7 +611,7 @@ IN PWDFDEVICE_INIT DeviceInit
 	WDF_TIMER_CONFIG              timerConfig;
 	WDFTIMER                      hTimer;
 
-	WDF_TIMER_CONFIG_INIT_PERIODIC(&timerConfig, CrosEcBusSyncTimer, 10);
+	WDF_TIMER_CONFIG_INIT_PERIODIC(&timerConfig, CrosEcBusSyncTimer, 100);
 	timerConfig.TolerableDelay = TolerableDelayUnlimited; //Don't wake from S0ix
 
 	WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
