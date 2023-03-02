@@ -19,6 +19,8 @@
 
 #include <acpiioct.h>
 
+#include "gpiowrapper.h"
+
 //
 // String definitions
 //
@@ -119,6 +121,7 @@ typedef struct _CROSECBUS_CONTEXT
     WDFWAITLOCK EcLock;
 
     BOOLEAN FoundSyncGPIO;
+    GPIO_CONTEXT SyncGpioContext;
     LONG SyncGpioWorkItemActive;
     WDFTIMER SyncGpioTimer;
     WDFWORKITEM SyncGpioWorkItem;

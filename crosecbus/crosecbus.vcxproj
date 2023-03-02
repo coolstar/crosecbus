@@ -150,6 +150,7 @@
     <ClInclude Include="driver.h" />
     <ClInclude Include="crosecbus.h" />
     <ClInclude Include="ec_commands.h" />
+    <ClInclude Include="gpiowrapper.h" />
     <ClInclude Include="trace.h" />
     <ClInclude Include="userspaceQueue.h" />
   </ItemGroup>
@@ -157,6 +158,7 @@
     <ClCompile Include="comm-lpc.c" />
     <ClCompile Include="comm-mec_lpc.c" />
     <ClCompile Include="crosecbus.c" />
+    <ClCompile Include="gpio.c" />
     <ClCompile Include="userspaceQueue.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

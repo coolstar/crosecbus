@@ -9,6 +9,8 @@
 #define bool int
 #define MS_IN_US 1000
 
+void CrosEcBusSyncTimer(_In_ WDFTIMER hTimer);
+
 VOID
 CrosEcBusS0ixNotifyCallback(
 	PCROSECBUS_CONTEXT pDevice,
@@ -148,10 +150,71 @@ Status
 	NTSTATUS status = STATUS_INSUFFICIENT_RESOURCES;
 
 	UNREFERENCED_PARAMETER(FxResourcesRaw);
-	UNREFERENCED_PARAMETER(FxResourcesTranslated);
 
-	//Assume we have sync GPIO for now
-	pDevice->FoundSyncGPIO = TRUE;
+	pDevice->FoundSyncGPIO = FALSE;
+
+	//
+	// Parse the peripheral's resources.
+	//
+
+	ULONG resourceCount = WdfCmResourceListGetCount(FxResourcesTranslated);
+
+	for (ULONG i = 0; i < resourceCount; i++)
+	{
+		PCM_PARTIAL_RESOURCE_DESCRIPTOR pDescriptor;
+		UCHAR Class;
+		UCHAR Type;
+
+		pDescriptor = WdfCmResourceListGetDescriptor(
+			FxResourcesTranslated, i);
+
+		switch (pDescriptor->Type)
+		{
+		case CmResourceTypeConnection:
+			//
+			// Look for I2C or SPI resource and save connection ID.
+			//
+			Class = pDescriptor->u.Connection.Class;
+			Type = pDescriptor->u.Connection.Type;
+			if (Class == CM_RESOURCE_CONNECTION_CLASS_GPIO && Type == CM_RESOURCE_CONNECTION_TYPE_GPIO_IO) {
+				pDevice->SyncGpioContext.GpioResHubId.LowPart = pDescriptor->u.Connection.IdLowPart;
+				pDevice->SyncGpioContext.GpioResHubId.HighPart = pDescriptor->u.Connection.IdHighPart;
+				pDevice->FoundSyncGPIO = TRUE;
+			}
+			break;
+		default:
+			//
+			// Ignoring all other resource types.
+			//
+			break;
+		}
+	}
+
+	if (pDevice->FoundSyncGPIO) {
+		DbgPrint("Found Sync GPIO! Increasing EC polling rate!\n");
+
+		status = GpioTargetInitialize(pDevice->FxDevice, &pDevice->SyncGpioContext);
+		if (!NT_SUCCESS(status)) {
+			return status;
+		}
+	}
+
+	WDF_OBJECT_ATTRIBUTES		  attributes;
+	WDF_TIMER_CONFIG              timerConfig;
+	WDFTIMER                      hTimer;
+
+	WDF_TIMER_CONFIG_INIT_PERIODIC(&timerConfig, CrosEcBusSyncTimer, pDevice->FoundSyncGPIO ? 10 : 100);
+	timerConfig.TolerableDelay = TolerableDelayUnlimited; //Don't wake from S0ix
+
+	WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
+	attributes.ParentObject = pDevice->FxDevice;
+	status = WdfTimerCreate(&timerConfig, &attributes, &hTimer);
+	pDevice->SyncGpioTimer = hTimer;
+	if (!NT_SUCCESS(status))
+	{
+		CrosEcBusPrint(DEBUG_LEVEL_ERROR, DBG_PNP, "(%!FUNC!) WdfTimerCreate failed status:%!STATUS!\n", status);
+		return status;
+	}
 
 	status = WdfWaitLockCreate(
 		WDF_NO_OBJECT_ATTRIBUTES,
@@ -292,6 +355,10 @@ Status
 	PCROSECBUS_CONTEXT pDevice = GetDeviceContext(FxDevice);
 	UNREFERENCED_PARAMETER(FxResourcesTranslated);
 
+	if (pDevice->FoundSyncGPIO) {
+		GpioTargetDeinitialize(pDevice->FxDevice, &pDevice->SyncGpioContext);
+	}
+
 	if (pDevice->S0ixNotifyAcpiInterface.Context) { //Used for S0ix notifications
 		pDevice->S0ixNotifyAcpiInterface.UnregisterForDeviceNotifications(pDevice->S0ixNotifyAcpiInterface.Context);
 	}
@@ -379,9 +446,7 @@ Status
 
 	send_ec_command(pDevice, EC_CMD_MOTION_SENSE_CMD, 1, (UINT8*)&params, sizeof(params), (UINT8*)&resp, sizeof(resp)); //Ignore response as device may not have sensors
 
-	if (pDevice->FoundSyncGPIO) {
-		WdfTimerStart(pDevice->SyncGpioTimer, WDF_REL_TIMEOUT_IN_MS(100));
-	}
+	WdfTimerStart(pDevice->SyncGpioTimer, WDF_REL_TIMEOUT_IN_MS(pDevice->FoundSyncGPIO ? 10 : 100));
 
 	DbgPrint("D0 Entry\n");
 
@@ -451,6 +516,17 @@ CrosEcBusSyncWorkItem(
 
 	if (InterlockedExchange(&pDevice->SyncGpioWorkItemActive, 1) == 1) {
 		return;
+	}
+
+	if (pDevice->FoundSyncGPIO) {
+		UINT8 gpioData = 1;
+		if (!NT_SUCCESS(GpioReadDataSynchronously(&pDevice->SyncGpioContext, &gpioData, sizeof(gpioData)))) {
+			goto out;
+		}
+
+		if (gpioData != 0) {
+			goto out;
+		}
 	}
 
 	const uint32_t mkbp_mask =
@@ -614,22 +690,6 @@ IN PWDFDEVICE_INIT DeviceInit
 	if (!NT_SUCCESS(status)) {
 		CrosEcBusPrint(DEBUG_LEVEL_ERROR, DBG_PNP,
 			"WdfDeviceCreateSymbolicLink failed 0x%x\n", status);
-		return status;
-	}
-
-	WDF_TIMER_CONFIG              timerConfig;
-	WDFTIMER                      hTimer;
-
-	WDF_TIMER_CONFIG_INIT_PERIODIC(&timerConfig, CrosEcBusSyncTimer, 100);
-	timerConfig.TolerableDelay = TolerableDelayUnlimited; //Don't wake from S0ix
-
-	WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-	attributes.ParentObject = device;
-	status = WdfTimerCreate(&timerConfig, &attributes, &hTimer);
-	devContext->SyncGpioTimer = hTimer;
-	if (!NT_SUCCESS(status))
-	{
-		CrosEcBusPrint(DEBUG_LEVEL_ERROR, DBG_PNP, "(%!FUNC!) WdfTimerCreate failed status:%!STATUS!\n", status);
 		return status;
 	}
 
