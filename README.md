@@ -10,6 +10,7 @@ Known ACPI IDs:
 * ACPI\GOOG0006: Chrome EC Sensor Hub - https://github.com/coolstar/crossensors
 * ACPI\GOOG0007: Chrome EC Vivaldi Keyboard Settings - https://github.com/coolstar/crosecvivaldi
 * ACPI\GOOG000A: Chrome EC Keyboard - https://github.com/coolstar/croskeyboard4
+* ACPI\GOOG000B: Pixel Slate Base (also used for Sensor Hub) - https://github.com/coolstar/crossensors
 * ACPI\GOOG0012: Chrome EC I2C Passthrough - https://github.com/coolstar/croseci2c
 * ACPI\GOOG0013: Chrome EC Audio Codec (Usually DMIC over I2S) - https://github.com/coolstar/croseccodec
 * ACPI\GOOG0014: Chrome EC USB-C
