@@ -15,6 +15,11 @@ Known ACPI IDs:
 * ACPI\GOOG0013: Chrome EC Audio Codec (Usually DMIC over I2S) - https://github.com/coolstar/croseccodec
 * ACPI\GOOG0014: Chrome EC USB-C
 
+IDs not covered by crosec:
+* ACPI\GOOG000C: Wilco EC (not this driver)
+* ACPI\GOOG000D: Wilco EC Event (unused in Windows)
+* ACPI\GOOG000E: Wilco EC UCSI (covered by in-box UCSI driver)
+
 Protocols Implemented:
 * LPC v2
 * LPC v3 (Most Chromebooks)
