@@ -14,6 +14,8 @@ Known ACPI IDs:
 * ACPI\GOOG0012: Chrome EC I2C Passthrough - https://github.com/coolstar/croseci2c
 * ACPI\GOOG0013: Chrome EC Audio Codec (Usually DMIC over I2S) - https://github.com/coolstar/croseccodec
 * ACPI\GOOG0014: Chrome EC USB-C
+* ACPI\GOOG0015: Chrome EC Trackpoint
+* ACPI\GOOG0016: Chrome OS GPIOs
 
 IDs not covered by crosec:
 * ACPI\GOOG000C: Wilco EC (not this driver)
