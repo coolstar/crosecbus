@@ -627,7 +627,7 @@ IN PWDFDEVICE_INIT DeviceInit
 	{
 		WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS IdleSettings;
 
-		WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS_INIT(&IdleSettings, IdleCannotWakeFromS0);
+		WDF_DEVICE_POWER_POLICY_IDLE_SETTINGS_INIT(&IdleSettings, IdleCanWakeFromS0);
 		IdleSettings.IdleTimeoutType = SystemManagedIdleTimeoutWithHint;
 		IdleSettings.IdleTimeout = 1000;
 		IdleSettings.UserControlOfIdleSettings = IdleDoNotAllowUserControl;
