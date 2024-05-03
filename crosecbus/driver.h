@@ -19,8 +19,6 @@
 
 #include <acpiioct.h>
 
-#include "gpiowrapper.h"
-
 //
 // String definitions
 //
@@ -122,11 +120,8 @@ typedef struct _CROSECBUS_CONTEXT
     LONG64 KernelAccessesWaiting;
     WDFWAITLOCK EcLock;
 
+    WDFINTERRUPT Interrupt;
     BOOLEAN FoundSyncGPIO;
-    GPIO_CONTEXT SyncGpioContext;
-    LONG SyncGpioWorkItemActive;
-    WDFTIMER SyncGpioTimer;
-    WDFWORKITEM SyncGpioWorkItem;
     PCALLBACK_OBJECT CSButtonsCallback;
 
     //S0IX Notify

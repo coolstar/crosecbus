@@ -86,7 +86,7 @@
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <Inf>
-      <TimeStamp>2.0.0</TimeStamp>
+      <TimeStamp>2.1.0</TimeStamp>
     </Inf>
     <DriverSign>
       <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
@@ -100,7 +100,7 @@
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <Inf>
-      <TimeStamp>2.0.0</TimeStamp>
+      <TimeStamp>2.1.0</TimeStamp>
     </Inf>
     <DriverSign>
       <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
@@ -114,7 +114,7 @@
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <Inf>
-      <TimeStamp>2.0.0</TimeStamp>
+      <TimeStamp>2.1.0</TimeStamp>
     </Inf>
     <DriverSign>
       <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
@@ -128,7 +128,7 @@
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
     <Inf>
-      <TimeStamp>2.0.0</TimeStamp>
+      <TimeStamp>2.1.0</TimeStamp>
     </Inf>
     <DriverSign>
       <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
@@ -146,7 +146,6 @@
     <ClInclude Include="driver.h" />
     <ClInclude Include="crosecbus.h" />
     <ClInclude Include="ec_commands.h" />
-    <ClInclude Include="gpiowrapper.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="trace.h" />
     <ClInclude Include="userspaceQueue.h" />
@@ -155,7 +154,6 @@
     <ClCompile Include="comm-lpc.c" />
     <ClCompile Include="comm-mec_lpc.c" />
     <ClCompile Include="crosecbus.c" />
-    <ClCompile Include="gpio.c" />
     <ClCompile Include="userspaceQueue.c" />
   </ItemGroup>
   <ItemGroup>
